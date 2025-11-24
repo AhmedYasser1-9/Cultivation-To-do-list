@@ -1,0 +1,33 @@
+---
+alwaysApply: true
+---
+
+## Project Context
+You are building a "Gamified Cultivation Task Manager" web app.
+The theme is strictly Xianxia/Wuxia (Martial Arts Fantasy).
+- Users are "Cultivators".
+- Tasks are "Missions" or "Training".
+- XP is "Cultivation Base" or "Qi".
+- Levels are "Realms" (Mortal -> Foundation -> Golden Core... etc).
+
+## Tech Stack (Strictly Enforced)
+- Frontend: React (Vite) + JavaScript.
+- Styling: Tailwind CSS.
+- Icons: Lucide-React.
+- Animation: Framer Motion.
+- Data Persistence: LocalStorage (for now).
+
+## Design System & Styling Rules
+- **Theme:** Dark Mode ONLY. Use deep backgrounds (`bg-slate-900`, `bg-zinc-950`).
+- **Accents:** Use Gold (`text-amber-400`), Jade (`text-emerald-500`), and Crimson (`text-red-500`) for effects.
+- **UI Elements:** Cards should look like jade tablets or ancient scrolls. Use borders with slight opacity.
+- **Animations:** Everything must feel smooth. Use Framer Motion for:
+  - Task completion (particles/glow).
+  - Level up (modal popup).
+  - Hover effects on cards.
+
+## Coding Behavior
+- Write clean, modern React functional components.
+- Always use Tailwind for styling (no CSS files).
+- When logical changes happen (like XP gain), explain it in "Cultivation Terms" in the comments.
+- Keep components small and modular in `src/components`.
