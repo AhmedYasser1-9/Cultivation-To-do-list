@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 const LOCAL_STORAGE_KEY = 'cultivationState'
 const TASKS_STORAGE_KEY = 'cultivationTasks'
 
-// Realms of cultivation – mortal to apex/supreme/sovereign heights.
+// Realms: 0 -> 150,000 XP
 const REALMS = [
   { name: 'Condensing Pulse', xp: 0 },
   { name: 'Houtian', xp: 200 },
@@ -47,7 +47,6 @@ const REALMS = [
   { name: 'OPM', xp: 150_000 },
 ]
 
-// Difficulty → Task XP
 const TASK_XP_MAP = {
   low: 10,
   medium: 25,
@@ -55,7 +54,15 @@ const TASK_XP_MAP = {
   extreme: 100,
 }
 
-// Duration (minutes) → Focus streak bonus
+const ENDURANCE_MILESTONES = [
+  { minutes: 180, xp: 200 },
+  { minutes: 300, xp: 600 },
+  { minutes: 480, xp: 1_200 },
+  { minutes: 600, xp: 1_800 },
+  { minutes: 750, xp: 2_500 },
+  { minutes: 900, xp: 3_000 },
+]
+
 function getFocusStreakXp(minutes) {
   if (minutes >= 300) return 1_300
   if (minutes >= 240) return 900
@@ -67,340 +74,191 @@ function getFocusStreakXp(minutes) {
   return 0
 }
 
-// Daily endurance milestone thresholds (minutes) and bonuses.
-const ENDURANCE_MILESTONES = [
-  { minutes: 180, xp: 200 },
-  { minutes: 300, xp: 600 },
-  { minutes: 480, xp: 1_200 },
-  { minutes: 600, xp: 1_800 },
-  { minutes: 750, xp: 2_500 }, // Apex / Supreme grind tier
-  { minutes: 900, xp: 3_000 }, // Supreme Tier – Sovereign endurance
-]
-
-const CultivationContext = createContext(null)
-
-function getTodayKey(date = new Date()) {
-  return date.toISOString().slice(0, 10) // YYYY-MM-DD
-}
-
-function loadInitialState() {
-  if (typeof window === 'undefined') {
-    return {
-      qi: 0,
-      spiritStones: 0,
-      lastLoginDate: null,
-      todayTotalMinutes: 0,
-      enduranceMilestonesAwarded: [],
-    }
-  }
-
-  try {
-    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
-    if (!raw) {
-      return {
-        qi: 0,
-        spiritStones: 0,
-        lastLoginDate: null,
-        todayTotalMinutes: 0,
-        enduranceMilestonesAwarded: [],
-      }
-    }
-    const parsed = JSON.parse(raw)
-    return {
-      qi: Number(parsed.qi) || 0,
-      spiritStones: Number(parsed.spiritStones) || 0,
-      lastLoginDate: parsed.lastLoginDate || null,
-      todayTotalMinutes: Number(parsed.todayTotalMinutes) || 0,
-      enduranceMilestonesAwarded: Array.isArray(parsed.enduranceMilestonesAwarded)
-        ? parsed.enduranceMilestonesAwarded
-        : [],
-    }
-  } catch {
-    // If mortal scripts fail, reset the cultivation record.
-    return {
-      qi: 0,
-      spiritStones: 0,
-      lastLoginDate: null,
-      todayTotalMinutes: 0,
-      enduranceMilestonesAwarded: [],
-    }
-  }
-}
-
-function persistState(state) {
-  if (typeof window === 'undefined') return
-  const payload = {
-    qi: state.qi,
-    spiritStones: state.spiritStones,
-    lastLoginDate: state.lastLoginDate,
-    todayTotalMinutes: state.todayTotalMinutes,
-    enduranceMilestonesAwarded: state.enduranceMilestonesAwarded,
-  }
-  window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload))
-}
-
-function loadInitialTasks() {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = window.localStorage.getItem(TASKS_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.map((task) => ({
-      id: String(task.id ?? ''),
-      title: String(task.title ?? ''),
-      difficulty: task.difficulty ?? 'Low',
-      isCompleted: Boolean(task.isCompleted),
-      tags: Array.isArray(task.tags) ? task.tags.map(String) : [],
-    }))
-  } catch {
-    return []
-  }
-}
-
-function persistTasks(tasks) {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks))
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 function getRealmIndexFromQi(qi) {
   let index = 0
-  for (let i = 0; i < REALMS.length; i += 1) {
+  for (let i = 0; i < REALMS.length; i++) {
     if (qi >= REALMS[i].xp) index = i
     else break
   }
   return index
 }
 
+function loadInitialState() {
+  if (typeof window === 'undefined') return { qi: 0, spiritStones: 0, lastLoginDate: null, todayTotalMinutes: 0, enduranceMilestonesAwarded: [], knownTags: [] }
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
+    if (!raw) return { qi: 0, spiritStones: 0, lastLoginDate: null, todayTotalMinutes: 0, enduranceMilestonesAwarded: [], knownTags: [] }
+    const parsed = JSON.parse(raw)
+    return {
+      qi: Number(parsed.qi) || 0,
+      spiritStones: Number(parsed.spiritStones) || 0,
+      lastLoginDate: parsed.lastLoginDate || null,
+      todayTotalMinutes: Number(parsed.todayTotalMinutes) || 0,
+      enduranceMilestonesAwarded: Array.isArray(parsed.enduranceMilestonesAwarded) ? parsed.enduranceMilestonesAwarded : [],
+      knownTags: Array.isArray(parsed.knownTags) ? parsed.knownTags : [] // تحميل التاجات المحفوظة
+    }
+  } catch {
+    return { qi: 0, spiritStones: 0, lastLoginDate: null, todayTotalMinutes: 0, enduranceMilestonesAwarded: [], knownTags: [] }
+  }
+}
+
+function loadInitialTasks() {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(TASKS_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch { return [] }
+}
+
+const CultivationContext = createContext(null)
+
 export function CultivationProvider({ children }) {
   const [state, setState] = useState(() => loadInitialState())
   const [tasks, setTasks] = useState(() => loadInitialTasks())
 
-  // Normalize daily data on mount (handle new day reset).
   useEffect(() => {
-    const todayKey = getTodayKey()
-    setState((prev) => {
-      if (!prev.lastLoginDate || prev.lastLoginDate !== todayKey) {
-        const next = {
-          ...prev,
-          lastLoginDate: todayKey,
-          todayTotalMinutes: 0,
-          enduranceMilestonesAwarded: [],
-        }
-        persistState(next)
-        return next
-      }
-      persistState(prev)
-      return prev
-    })
-  }, [])
-
-  // Persist whenever core cultivation attributes change.
-  useEffect(() => {
-    persistState(state)
+    window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state))
   }, [state])
 
-  // Persist task scrolls whenever they change.
   useEffect(() => {
-    persistTasks(tasks)
+    window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks))
   }, [tasks])
+
+  useEffect(() => {
+    const todayKey = getTodayKey()
+    if (state.lastLoginDate !== todayKey) {
+      setState(prev => ({
+        ...prev,
+        lastLoginDate: todayKey,
+        todayTotalMinutes: 0,
+        enduranceMilestonesAwarded: []
+      }))
+    }
+  }, [])
 
   const realmIndex = useMemo(() => getRealmIndexFromQi(state.qi), [state.qi])
   const currentRealm = REALMS[realmIndex]
   const nextRealm = REALMS[realmIndex + 1] || REALMS[REALMS.length - 1]
 
-  // gainQi: Main function to increase cultivation base and check for breakthroughs.
   function gainQi(amount) {
-    if (!amount || Number.isNaN(amount)) return
-
-    setState((prev) => {
-      const currentQi = prev.qi
-      const targetQi = Math.min(currentQi + amount, REALMS[REALMS.length - 1].xp)
-      const newRealmIndex = getRealmIndexFromQi(targetQi)
-      const oldRealmIndex = getRealmIndexFromQi(currentQi)
-
-      // Realm breakthrough logic:
-      // When crossing thresholds into higher realms, the cultivator ascends from mortal strata
-      // toward Apex, Supreme, and Sovereign stages.
-      const hasBrokenThrough = newRealmIndex > oldRealmIndex
-      // We don't yet dispatch side-effects; UI may listen to `currentRealm` changes.
-
+    if (amount === 0) return
+    setState(prev => {
+      const newQi = Math.max(0, prev.qi + amount)
+      const cappedQi = Math.min(newQi, REALMS[REALMS.length - 1].xp)
       return {
         ...prev,
-        qi: targetQi,
-        // spiritStones unchanged here; other systems may award them.
-        lastLoginDate: prev.lastLoginDate || getTodayKey(),
+        qi: cappedQi,
+        lastLoginDate: getTodayKey()
       }
     })
   }
 
-  // processSession: combines Task XP, Focus Streak, and Daily Endurance.
   function processSession(difficulty, durationMinutes) {
     const minutes = Math.max(0, Number(durationMinutes) || 0)
-    if (minutes === 0) return { totalXp: 0, breakdown: {} }
-
     const todayKey = getTodayKey()
 
-    setState((prev) => {
-      // Ensure date is current for endurance tracking.
-      const isNewDay = !prev.lastLoginDate || prev.lastLoginDate !== todayKey
+    setState(prev => {
+      const isNewDay = prev.lastLoginDate !== todayKey
       const baseTodayMinutes = isNewDay ? 0 : prev.todayTotalMinutes
       const baseAwarded = isNewDay ? [] : prev.enduranceMilestonesAwarded
 
       const updatedTodayMinutes = baseTodayMinutes + minutes
 
-      // Task XP based on difficulty.
       const difficultyKey = String(difficulty || '').toLowerCase()
-      const taskXp = TASK_XP_MAP[difficultyKey] ?? 0
-
-      // Focus streak XP for this session.
+      const taskXp = TASK_XP_MAP[difficultyKey] ?? 10
       const focusXp = getFocusStreakXp(minutes)
-
-      // Endurance base XP: 50 XP per 60 minutes, proportional.
       const enduranceBaseXp = (50 * minutes) / 60
 
-      // Endurance milestone XP: awarded once when thresholds are crossed in total minutes.
-      let enduranceMilestoneXp = 0
+      let milestoneXp = 0
       const newAwarded = [...baseAwarded]
-      for (const milestone of ENDURANCE_MILESTONES) {
-        const alreadyAwarded = newAwarded.includes(milestone.minutes)
-        const crossed =
-          baseTodayMinutes < milestone.minutes &&
-          updatedTodayMinutes >= milestone.minutes
-        if (!alreadyAwarded && crossed) {
-          enduranceMilestoneXp += milestone.xp
-          newAwarded.push(milestone.minutes)
+      ENDURANCE_MILESTONES.forEach(m => {
+        if (!newAwarded.includes(m.minutes) && updatedTodayMinutes >= m.minutes) {
+          milestoneXp += m.xp
+          newAwarded.push(m.minutes)
         }
-      }
+      })
 
-      const totalXpGain = Math.round(
-        taskXp + focusXp + enduranceBaseXp + enduranceMilestoneXp,
-      )
+      const totalGain = Math.round(taskXp + focusXp + enduranceBaseXp + milestoneXp)
+      const newQi = Math.min(prev.qi + totalGain, REALMS[REALMS.length - 1].xp)
 
-      const currentQi = prev.qi
-      const targetQi = Math.min(
-        currentQi + totalXpGain,
-        REALMS[REALMS.length - 1].xp,
-      )
-
-      const nextState = {
+      return {
         ...prev,
-        qi: targetQi,
+        qi: newQi,
         lastLoginDate: todayKey,
         todayTotalMinutes: updatedTodayMinutes,
-        enduranceMilestonesAwarded: newAwarded,
+        enduranceMilestonesAwarded: newAwarded
       }
-
-      persistState(nextState)
-      return nextState
     })
   }
 
-  // ----- Task Management: mission scrolls for the cultivator -----
-
+  // إضافة مهمة + حفظ التاجات الجديدة
   function addTask(task) {
-    if (!task) return
-    setTasks((prev) => {
-      const id =
-        task.id ||
-        (typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(16).slice(2)}`)
-
-      const nextTask = {
-        id,
-        title: task.title ?? '',
-        difficulty: task.difficulty ?? 'Low',
-        isCompleted: Boolean(task.isCompleted),
-        tags: Array.isArray(task.tags) ? task.tags : [],
-      }
-
-      return [...prev, nextTask]
-    })
-  }
-
-  function deleteTask(taskId) {
-    if (!taskId) return
-    setTasks((prev) => prev.filter((task) => task.id !== taskId))
-  }
-
-  function toggleTaskCompletion(taskId) {
-    if (!taskId) return
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === taskId
-          ? { ...task, isCompleted: !task.isCompleted }
-          : task,
-      ),
-    )
-  }
-
-  const value = {
-    qi: state.qi,
-    spiritStones: state.spiritStones,
-    lastLoginDate: state.lastLoginDate,
-    todayTotalMinutes: state.todayTotalMinutes,
-
-    tasks,
-
-    currentRealm,
-    nextRealm,
-    realmIndex,
-    realms: REALMS,
-
-    // Core operations
-    gainQi,
-    processSession,
-
-    // Task management
-    addTask,
-    deleteTask,
-    toggleTaskCompletion,
-
-    // Placeholder hooks for future Apex/Supreme/Sovereign-tier systems.
-    addSpiritStones: (amount) => {
-      const delta = Number(amount) || 0
-      if (!delta) return
-      setState((prev) => {
-        const next = {
+    // 1. تحديث التاجات المحفوظة
+    if (task.tags && task.tags.length > 0) {
+      setState(prev => {
+        const newTags = task.tags.filter(t => !prev.knownTags.includes(t))
+        if (newTags.length === 0) return prev
+        return {
           ...prev,
-          spiritStones: Math.max(0, prev.spiritStones + delta),
+          knownTags: [...prev.knownTags, ...newTags]
         }
-        persistState(next)
-        return next
       })
-    },
-    spendSpiritStones: (amount) => {
-      const cost = Number(amount) || 0
-      if (!cost) return false
-      let success = false
-      setState((prev) => {
-        if (prev.spiritStones < cost) return prev
-        success = true
-        const next = {
-          ...prev,
-          spiritStones: prev.spiritStones - cost,
-        }
-        persistState(next)
-        return next
-      })
-      return success
-    },
+    }
+
+    const newTask = { 
+      id: crypto.randomUUID(), 
+      isCompleted: false, 
+      difficulty: 'Low',
+      tags: [], 
+      ...task 
+    }
+    setTasks(prev => [...prev, newTask])
+  }
+
+  function deleteTask(id) {
+    setTasks(prev => prev.filter(t => t.id !== id))
+  }
+
+  function toggleTaskCompletion(id) {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, isCompleted: !t.isCompleted } : t))
+  }
+
+  function addSpiritStones(amount) {
+    setState(prev => ({ ...prev, spiritStones: prev.spiritStones + amount }))
+  }
+  function spendSpiritStones(amount) {
+    if (state.spiritStones < amount) return false
+    setState(prev => ({ ...prev, spiritStones: prev.spiritStones - amount }))
+    return true
   }
 
   return (
-    <CultivationContext.Provider value={value}>
+    <CultivationContext.Provider value={{
+      qi: state.qi,
+      spiritStones: state.spiritStones,
+      knownTags: state.knownTags, // تصدير التاجات
+      tasks,
+      currentRealm,
+      nextRealm,
+      realmIndex,
+      realms: REALMS,
+      gainQi,
+      processSession,
+      addTask,
+      deleteTask,
+      toggleTaskCompletion,
+      addSpiritStones,
+      spendSpiritStones
+    }}>
       {children}
     </CultivationContext.Provider>
   )
 }
 
 export function useCultivation() {
-  const ctx = useContext(CultivationContext)
-  if (!ctx) {
-    throw new Error('useCultivation must be used within a CultivationProvider')
-  }
-  return ctx
+  return useContext(CultivationContext)
 }
-
-
