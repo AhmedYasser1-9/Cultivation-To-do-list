@@ -26,10 +26,18 @@ const BG_COLORS = {
 }
 
 const difficultyConfig = {
-  Low: { color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'bg-emerald-500/10' },
-  Medium: { color: 'text-sky-400', border: 'border-sky-500/30', bg: 'bg-sky-500/10' },
-  High: { color: 'text-violet-400', border: 'border-violet-500/30', bg: 'bg-violet-500/10' },
-  Extreme: { color: 'text-red-400', border: 'border-red-500/30', bg: 'bg-red-500/10' },
+  'low': { color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'bg-emerald-500/10' },
+  'low-med': { color: 'text-teal-400', border: 'border-teal-500/30', bg: 'bg-teal-500/10' },
+  'med': { color: 'text-sky-400', border: 'border-sky-500/30', bg: 'bg-sky-500/10' },
+  'med-high': { color: 'text-blue-400', border: 'border-blue-500/30', bg: 'bg-blue-500/10' },
+  'high': { color: 'text-indigo-400', border: 'border-indigo-500/30', bg: 'bg-indigo-500/10' },
+  'high-extreme': { color: 'text-purple-400', border: 'border-purple-500/30', bg: 'bg-purple-500/10' },
+  'extreme': { color: 'text-rose-400', border: 'border-rose-500/30', bg: 'bg-rose-500/10' },
+  // Fallback for old tasks
+  'Low': { color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'bg-emerald-500/10' }, 
+  'Medium': { color: 'text-sky-400', border: 'border-sky-500/30', bg: 'bg-sky-500/10' },
+  'High': { color: 'text-indigo-400', border: 'border-indigo-500/30', bg: 'bg-indigo-500/10' },
+  'Extreme': { color: 'text-rose-400', border: 'border-rose-500/30', bg: 'bg-rose-500/10' },
 }
 
 const getHashColor = (text) => {

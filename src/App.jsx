@@ -1,24 +1,15 @@
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Brain, ScrollText, Store } from 'lucide-react'
 import RealmStatus from './components/RealmStatus.jsx'
 import MissionBoard from './components/MissionBoard.jsx'
+import BreakthroughModal from './components/BreakthroughModal.jsx' // استدعاء المكون الجديد
+import { useCultivation } from './context/CultivationContext.jsx'
 
 const navItems = [
-  {
-    label: 'Sect Missions',
-    description: 'Monitor daily cultivation tasks',
-    icon: ScrollText,
-  },
-  {
-    label: 'Inner World',
-    description: 'Survey stats & cultivation base',
-    icon: Brain,
-  },
-  {
-    label: 'Spirit Pavilion',
-    description: 'Trade merit for relics',
-    icon: Store,
-  },
+  { label: 'Sect Missions', description: 'Monitor daily cultivation tasks', icon: ScrollText },
+  { label: 'Inner World', description: 'Survey stats & cultivation base', icon: Brain },
+  { label: 'Spirit Pavilion', description: 'Trade merit for relics', icon: Store },
 ]
 
 const auraVariants = {
@@ -27,18 +18,27 @@ const auraVariants = {
 }
 
 function App() {
+  const { currentRealm } = useCultivation()
+  const [showBreakthrough, setShowBreakthrough] = useState(null)
+  
+  // تتبع المستوى السابق لمعرفة متى يحدث التقدم
+  const prevRealmXP = useRef(currentRealm.xp)
+
+  useEffect(() => {
+    // إذا كان الـ XP للمستوى الحالي أكبر من السابق، فهذا يعني صعوداً
+    if (currentRealm.xp > prevRealmXP.current) {
+      setShowBreakthrough(currentRealm)
+    }
+    prevRealmXP.current = currentRealm.xp
+  }, [currentRealm])
+
   return (
     <div className="min-h-screen bg-slate-950 text-emerald-100">
       <div className="fixed inset-y-0 z-20 hidden w-72 flex-col border-r border-amber-900/30 bg-slate-950/95 px-6 py-10 backdrop-blur md:flex">
         <div className="mb-10 space-y-2">
-          <p className="text-xs uppercase tracking-[0.6em] text-amber-200">
-            Order of Dawn
-          </p>
-          <h1 className="text-2xl font-semibold text-emerald-400">
-            Cultivation Log
-          </h1>
+          <p className="text-xs uppercase tracking-[0.6em] text-amber-200">Order of Dawn</p>
+          <h1 className="text-2xl font-semibold text-emerald-400">Cultivation Log</h1>
         </div>
-
         <nav className="space-y-4">
           {navItems.map(({ label, description, icon: Icon }) => (
             <motion.button
@@ -55,23 +55,16 @@ function App() {
                   <Icon size={20} />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold tracking-wide text-emerald-50">
-                    {label}
-                  </p>
+                  <p className="text-sm font-semibold tracking-wide text-emerald-50">{label}</p>
                   <p className="text-xs text-emerald-400/80">{description}</p>
                 </div>
               </div>
             </motion.button>
           ))}
         </nav>
-
         <div className="mt-auto rounded-3xl border border-amber-900/30 bg-slate-900/60 p-5">
-          <p className="text-xs uppercase tracking-[0.4em] text-amber-200">
-            Spirit Forecast
-          </p>
-          <p className="mt-3 text-sm text-emerald-400">
-            Qi currents favor insight. Prepare for inner breakthroughs.
-          </p>
+          <p className="text-xs uppercase tracking-[0.4em] text-amber-200">Spirit Forecast</p>
+          <p className="mt-3 text-sm text-emerald-400">Qi currents favor insight. Prepare for inner breakthroughs.</p>
         </div>
       </div>
 
@@ -81,6 +74,12 @@ function App() {
           <MissionBoard />
         </div>
       </main>
+
+      {/* نافذة الاختراق - تظهر فوق كل شيء */}
+      <BreakthroughModal 
+        realm={showBreakthrough} 
+        onClose={() => setShowBreakthrough(null)} 
+      />
     </div>
   )
 }
