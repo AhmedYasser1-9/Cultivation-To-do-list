@@ -2,8 +2,9 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 
 const LOCAL_STORAGE_KEY = 'cultivationState'
 const TASKS_STORAGE_KEY = 'cultivationTasks'
+const TAGS_COLORS_KEY = 'cultivationTagColors' // مفتاح جديد لألوان التاجات
 
-// Realms: 0 -> 150,000 XP
+// Realms
 const REALMS = [
   { name: 'Condensing Pulse', xp: 0 },
   { name: 'Houtian', xp: 200 },
@@ -47,71 +48,36 @@ const REALMS = [
   { name: 'OPM', xp: 150_000 },
 ]
 
-const TASK_XP_MAP = {
-  low: 10,
-  medium: 25,
-  high: 50,
-  extreme: 100,
-}
-
+const TASK_XP_MAP = { low: 10, medium: 25, high: 50, extreme: 100 }
 const ENDURANCE_MILESTONES = [
-  { minutes: 180, xp: 200 },
-  { minutes: 300, xp: 600 },
-  { minutes: 480, xp: 1_200 },
-  { minutes: 600, xp: 1_800 },
-  { minutes: 750, xp: 2_500 },
-  { minutes: 900, xp: 3_000 },
+  { minutes: 180, xp: 200 }, { minutes: 300, xp: 600 }, { minutes: 480, xp: 1_200 },
+  { minutes: 600, xp: 1_800 }, { minutes: 750, xp: 2_500 }, { minutes: 900, xp: 3_000 },
 ]
 
 function getFocusStreakXp(minutes) {
-  if (minutes >= 300) return 1_300
-  if (minutes >= 240) return 900
-  if (minutes >= 180) return 600
-  if (minutes >= 120) return 350
-  if (minutes >= 90) return 150
-  if (minutes >= 60) return 70
-  if (minutes >= 30) return 15
-  return 0
+  if (minutes >= 300) return 1_300; if (minutes >= 240) return 900; if (minutes >= 180) return 600
+  if (minutes >= 120) return 350; if (minutes >= 90) return 150; if (minutes >= 60) return 70
+  if (minutes >= 30) return 15; return 0
 }
 
-function getTodayKey() {
-  return new Date().toISOString().slice(0, 10)
-}
-
+function getTodayKey() { return new Date().toISOString().slice(0, 10) }
 function getRealmIndexFromQi(qi) {
-  let index = 0
-  for (let i = 0; i < REALMS.length; i++) {
-    if (qi >= REALMS[i].xp) index = i
-    else break
-  }
-  return index
+  let index = 0; for (let i = 0; i < REALMS.length; i++) { if (qi >= REALMS[i].xp) index = i; else break } return index
 }
 
+// Loaders
 function loadInitialState() {
   if (typeof window === 'undefined') return { qi: 0, spiritStones: 0, lastLoginDate: null, todayTotalMinutes: 0, enduranceMilestonesAwarded: [], knownTags: [] }
   try {
     const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
-    if (!raw) return { qi: 0, spiritStones: 0, lastLoginDate: null, todayTotalMinutes: 0, enduranceMilestonesAwarded: [], knownTags: [] }
-    const parsed = JSON.parse(raw)
-    return {
-      qi: Number(parsed.qi) || 0,
-      spiritStones: Number(parsed.spiritStones) || 0,
-      lastLoginDate: parsed.lastLoginDate || null,
-      todayTotalMinutes: Number(parsed.todayTotalMinutes) || 0,
-      enduranceMilestonesAwarded: Array.isArray(parsed.enduranceMilestonesAwarded) ? parsed.enduranceMilestonesAwarded : [],
-      knownTags: Array.isArray(parsed.knownTags) ? parsed.knownTags : [] // تحميل التاجات المحفوظة
-    }
-  } catch {
-    return { qi: 0, spiritStones: 0, lastLoginDate: null, todayTotalMinutes: 0, enduranceMilestonesAwarded: [], knownTags: [] }
-  }
+    return raw ? JSON.parse(raw) : { qi: 0, spiritStones: 0, lastLoginDate: null, todayTotalMinutes: 0, enduranceMilestonesAwarded: [], knownTags: [] }
+  } catch { return { qi: 0, spiritStones: 0, lastLoginDate: null, todayTotalMinutes: 0, enduranceMilestonesAwarded: [], knownTags: [] } }
 }
-
 function loadInitialTasks() {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = window.localStorage.getItem(TASKS_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
+  try { const raw = window.localStorage.getItem(TASKS_STORAGE_KEY); return raw ? JSON.parse(raw) : [] } catch { return [] }
+}
+function loadTagColors() {
+  try { const raw = window.localStorage.getItem(TAGS_COLORS_KEY); return raw ? JSON.parse(raw) : {} } catch { return {} }
 }
 
 const CultivationContext = createContext(null)
@@ -119,24 +85,18 @@ const CultivationContext = createContext(null)
 export function CultivationProvider({ children }) {
   const [state, setState] = useState(() => loadInitialState())
   const [tasks, setTasks] = useState(() => loadInitialTasks())
+  const [tagColors, setTagColors] = useState(() => loadTagColors())
 
-  useEffect(() => {
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state))
-  }, [state])
+  // Persistence
+  useEffect(() => { window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state)) }, [state])
+  useEffect(() => { window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks)) }, [tasks])
+  useEffect(() => { window.localStorage.setItem(TAGS_COLORS_KEY, JSON.stringify(tagColors)) }, [tagColors])
 
-  useEffect(() => {
-    window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks))
-  }, [tasks])
-
+  // Daily Reset
   useEffect(() => {
     const todayKey = getTodayKey()
     if (state.lastLoginDate !== todayKey) {
-      setState(prev => ({
-        ...prev,
-        lastLoginDate: todayKey,
-        todayTotalMinutes: 0,
-        enduranceMilestonesAwarded: []
-      }))
+      setState(prev => ({ ...prev, lastLoginDate: todayKey, todayTotalMinutes: 0, enduranceMilestonesAwarded: [] }))
     }
   }, [])
 
@@ -149,74 +109,55 @@ export function CultivationProvider({ children }) {
     setState(prev => {
       const newQi = Math.max(0, prev.qi + amount)
       const cappedQi = Math.min(newQi, REALMS[REALMS.length - 1].xp)
-      return {
-        ...prev,
-        qi: cappedQi,
-        lastLoginDate: getTodayKey()
-      }
+      return { ...prev, qi: cappedQi, lastLoginDate: getTodayKey() }
     })
   }
 
   function processSession(difficulty, durationMinutes) {
     const minutes = Math.max(0, Number(durationMinutes) || 0)
     const todayKey = getTodayKey()
-
     setState(prev => {
       const isNewDay = prev.lastLoginDate !== todayKey
       const baseTodayMinutes = isNewDay ? 0 : prev.todayTotalMinutes
       const baseAwarded = isNewDay ? [] : prev.enduranceMilestonesAwarded
-
       const updatedTodayMinutes = baseTodayMinutes + minutes
-
-      const difficultyKey = String(difficulty || '').toLowerCase()
-      const taskXp = TASK_XP_MAP[difficultyKey] ?? 10
+      
+      const taskXp = TASK_XP_MAP[String(difficulty || '').toLowerCase()] ?? 10
       const focusXp = getFocusStreakXp(minutes)
       const enduranceBaseXp = (50 * minutes) / 60
-
+      
       let milestoneXp = 0
       const newAwarded = [...baseAwarded]
       ENDURANCE_MILESTONES.forEach(m => {
         if (!newAwarded.includes(m.minutes) && updatedTodayMinutes >= m.minutes) {
-          milestoneXp += m.xp
-          newAwarded.push(m.minutes)
+          milestoneXp += m.xp; newAwarded.push(m.minutes)
         }
       })
-
       const totalGain = Math.round(taskXp + focusXp + enduranceBaseXp + milestoneXp)
       const newQi = Math.min(prev.qi + totalGain, REALMS[REALMS.length - 1].xp)
-
-      return {
-        ...prev,
-        qi: newQi,
-        lastLoginDate: todayKey,
-        todayTotalMinutes: updatedTodayMinutes,
-        enduranceMilestonesAwarded: newAwarded
-      }
+      return { ...prev, qi: newQi, lastLoginDate: todayKey, todayTotalMinutes: updatedTodayMinutes, enduranceMilestonesAwarded: newAwarded }
     })
   }
 
-  // إضافة مهمة + حفظ التاجات الجديدة
+  // --- Task Management ---
   function addTask(task) {
-    // 1. تحديث التاجات المحفوظة
-    if (task.tags && task.tags.length > 0) {
+    if (task.tags?.length > 0) {
       setState(prev => {
         const newTags = task.tags.filter(t => !prev.knownTags.includes(t))
-        if (newTags.length === 0) return prev
-        return {
-          ...prev,
-          knownTags: [...prev.knownTags, ...newTags]
-        }
+        return newTags.length ? { ...prev, knownTags: [...prev.knownTags, ...newTags] } : prev
       })
     }
+    const newTask = { id: crypto.randomUUID(), isCompleted: false, difficulty: 'Low', tags: [], color: 'default', ...task }
+    setTasks(prev => [newTask, ...prev]) // Add to top
+  }
 
-    const newTask = { 
-      id: crypto.randomUUID(), 
-      isCompleted: false, 
-      difficulty: 'Low',
-      tags: [], 
-      ...task 
-    }
-    setTasks(prev => [...prev, newTask])
+  function updateTask(id, updates) {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
+  }
+
+  // دالة جديدة لترتيب المهام (Drag & Drop)
+  function reorderTasks(newOrderedTasks) {
+    setTasks(newOrderedTasks)
   }
 
   function deleteTask(id) {
@@ -227,38 +168,21 @@ export function CultivationProvider({ children }) {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, isCompleted: !t.isCompleted } : t))
   }
 
-  function addSpiritStones(amount) {
-    setState(prev => ({ ...prev, spiritStones: prev.spiritStones + amount }))
-  }
-  function spendSpiritStones(amount) {
-    if (state.spiritStones < amount) return false
-    setState(prev => ({ ...prev, spiritStones: prev.spiritStones - amount }))
-    return true
+  // --- Tag Customization ---
+  function setTagColor(tagName, colorKey) {
+    setTagColors(prev => ({ ...prev, [tagName]: colorKey }))
   }
 
   return (
     <CultivationContext.Provider value={{
-      qi: state.qi,
-      spiritStones: state.spiritStones,
-      knownTags: state.knownTags, // تصدير التاجات
-      tasks,
-      currentRealm,
-      nextRealm,
-      realmIndex,
-      realms: REALMS,
-      gainQi,
-      processSession,
-      addTask,
-      deleteTask,
-      toggleTaskCompletion,
-      addSpiritStones,
-      spendSpiritStones
+      qi: state.qi, spiritStones: state.spiritStones, knownTags: state.knownTags,
+      tasks, currentRealm, nextRealm, realmIndex, realms: REALMS, tagColors,
+      gainQi, processSession, addTask, updateTask, deleteTask, toggleTaskCompletion, 
+      reorderTasks, setTagColor
     }}>
       {children}
     </CultivationContext.Provider>
   )
 }
 
-export function useCultivation() {
-  return useContext(CultivationContext)
-}
+export function useCultivation() { return useContext(CultivationContext) }

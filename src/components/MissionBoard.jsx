@@ -1,53 +1,40 @@
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Scroll, Archive } from 'lucide-react'
+import { motion, AnimatePresence, Reorder } from 'framer-motion'
+import { Plus, User, CheckCircle2, ListTodo } from 'lucide-react'
 import { useCultivation } from '../context/CultivationContext.jsx'
 import MissionCard from './MissionCard.jsx'
 import TaskFormModal from './TaskFormModal.jsx'
 
-// تعريف قيم النقاط هنا لاستخدامها في الخصم
-const XP_VALUES = {
-  Low: 10,
-  Medium: 25,
-  High: 50,
-  Extreme: 100
-}
+const XP_VALUES = { Low: 10, Medium: 25, High: 50, Extreme: 100 }
 
 export default function MissionBoard() {
   const {
-    tasks,
-    addTask,
-    deleteTask,
-    toggleTaskCompletion,
-    processSession,
-    gainQi // نحتاج هذه الدالة للخصم
+    tasks, addTask, updateTask, deleteTask, toggleTaskCompletion,
+    processSession, gainQi, reorderTasks
   } = useCultivation()
   
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState('todo')
 
-  const activeTasks = tasks.filter(t => !t.isCompleted)
+  // فصل المهام للقائمتين
+  const todoTasks = tasks.filter(t => !t.isCompleted)
   const completedTasks = tasks.filter(t => t.isCompleted)
 
-  const handleModalSubmit = (taskData) => {
-    addTask(taskData)
+  const handleReorder = (newOrder) => {
+    // دمج الترتيب الجديد مع المهام المكتملة للحفاظ على القائمة
+    const combined = [...newOrder, ...completedTasks]
+    reorderTasks(combined)
   }
 
   const handleToggle = (id) => {
     const task = tasks.find((t) => t.id === id)
     if (!task) return
-
-    // المنطق الجديد: إضافة أو خصم
     if (!task.isCompleted) {
-      // 1. المهمة لم تكن مكتملة -> الآن تكتمل -> أضف نقاط
       processSession(task.difficulty, 0)
     } else {
-      // 2. المهمة كانت مكتملة -> الآن نلغيها -> اخصم نقاط
-      // نحسب القيمة ونضربها في سالب
       const amount = XP_VALUES[task.difficulty] || 10
       gainQi(-amount)
     }
-
-    // عكس الحالة البصرية
     toggleTaskCompletion(id)
   }
 
@@ -56,90 +43,78 @@ export default function MissionBoard() {
       <section className="relative overflow-hidden rounded-3xl border border-amber-900/30 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-md">
         
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <Scroll size={20} />
+              <User size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-emerald-100">Sect Missions</h2>
-              <p className="text-xs text-slate-400">Current Mandates ({activeTasks.length})</p>
+              <h2 className="text-lg font-bold text-emerald-100">Personal Cultivation</h2>
+              <p className="text-xs text-slate-400">Drag to prioritize your path</p>
             </div>
           </div>
 
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-lg shadow-emerald-900/20 transition-colors hover:bg-emerald-500"
-          >
-            <Plus size={16} />
-            <span>New Mandate</span>
-          </motion.button>
-        </div>
-
-        {/* Active Tasks */}
-        <div className="flex flex-col gap-3 min-h-[100px]">
-          <AnimatePresence mode="popLayout" initial={false}>
-            {activeTasks.length > 0 ? (
-              activeTasks.map((task) => (
-                <MissionCard
-                  key={task.id}
-                  task={task}
-                  onToggle={handleToggle}
-                  onDelete={deleteTask}
-                />
-              ))
-            ) : (
-              <motion.div 
-                initial={{ opacity: 0 }} 
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center py-8 text-center border-2 border-dashed border-slate-800 rounded-2xl"
-              >
-                <p className="text-sm text-slate-500">No active mandates.</p>
-                <p className="text-xs text-slate-600 mt-1">Rest, or seek new challenges.</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Completed Tasks */}
-        {completedTasks.length > 0 && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            className="mt-8 border-t border-slate-800 pt-6"
-          >
-            <div className="mb-4 flex items-center gap-2 opacity-60">
-              <Archive size={14} className="text-amber-500" />
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                Past Glories ({completedTasks.length})
-              </h3>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg bg-slate-950/50 p-1 border border-slate-800">
+              <button onClick={() => setActiveTab('todo')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'todo' ? 'bg-slate-800 text-emerald-300 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                <ListTodo size={14} /> To Do
+              </button>
+              <button onClick={() => setActiveTab('completed')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'completed' ? 'bg-slate-800 text-amber-300 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                <CheckCircle2 size={14} /> Done
+              </button>
             </div>
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-lg shadow-emerald-900/20 transition-colors hover:bg-emerald-500">
+              <Plus size={16} /> <span className="hidden sm:inline">New Task</span>
+            </motion.button>
+          </div>
+        </div>
 
-            <div className="flex flex-col gap-3 opacity-70 hover:opacity-100 transition-opacity duration-300">
-              <AnimatePresence mode="popLayout" initial={false}>
-                {completedTasks.map((task) => (
-                  <MissionCard
-                    key={task.id}
-                    task={task}
-                    onToggle={handleToggle}
-                    onDelete={deleteTask}
+        {/* Task List */}
+        <div className="flex flex-col gap-2 min-h-[200px]">
+          {activeTab === 'todo' ? (
+            <Reorder.Group axis="y" values={todoTasks} onReorder={handleReorder} className="flex flex-col gap-2">
+              {todoTasks.length > 0 ? (
+                todoTasks.map((task) => (
+                  <MissionCard 
+                    key={task.id} 
+                    task={task} 
+                    onToggle={handleToggle} 
+                    onDelete={deleteTask} 
+                    onUpdate={updateTask}
+                    enableDrag={true} // تفعيل السحب هنا فقط
                   />
-                ))}
-              </AnimatePresence>
+                ))
+              ) : (
+                <div className="py-12 text-center border-2 border-dashed border-slate-800/50 rounded-2xl">
+                  <p className="text-sm text-slate-500">No mandates pending.</p>
+                </div>
+              )}
+            </Reorder.Group>
+          ) : (
+            // القائمة المكتملة (بدون Reorder Group)
+            <div className="flex flex-col gap-2">
+              {completedTasks.length > 0 ? (
+                completedTasks.map((task) => (
+                  <MissionCard 
+                    key={task.id} 
+                    task={task} 
+                    onToggle={handleToggle} 
+                    onDelete={deleteTask} 
+                    onUpdate={updateTask}
+                    enableDrag={false} // تعطيل السحب
+                  />
+                ))
+              ) : (
+                <div className="py-12 text-center border-2 border-dashed border-slate-800/50 rounded-2xl">
+                  <p className="text-sm text-slate-500">No past glories yet.</p>
+                </div>
+              )}
             </div>
-          </motion.div>
-        )}
-
+          )}
+        </div>
       </section>
 
-      <TaskFormModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSubmit={handleModalSubmit}
-      />
+      <TaskFormModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={(data) => addTask(data)} />
     </>
   )
 }
