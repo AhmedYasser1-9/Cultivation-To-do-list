@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom' // ✅ Import Portal
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import { Calendar, Plus, Trash2, Check, MoreHorizontal, PenSquare, Copy, GripVertical, Search, X, Filter } from 'lucide-react'
 import { useCultivation } from '../context/CultivationContext.jsx'
 import WeeklyTargetFormModal from './WeeklyTargetFormModal.jsx'
 
-// --- CONSTANTS (Exact copy from MissionCard) ---
+// --- CONSTANTS (Same as before) ---
 const TAG_THEMES = {
   red:     { bg: 'bg-red-500/20', text: 'text-red-200', border: 'border-red-500/50' },
   orange:  { bg: 'bg-orange-500/20', text: 'text-orange-200', border: 'border-orange-500/50' },
@@ -90,11 +91,17 @@ const getHashColorKey = (text) => {
   return keys[Math.abs(hash % keys.length)]
 }
 
-// ✅ WeeklyCard: Optimized for smooth dragging (Rules of Motion applied)
 function WeeklyCard({ target, onDelete, onUpdate, onDuplicate, onEdit, tagColors, setTagColor, enableDrag }) {
   const controls = useDragControls()
+  
+  // State for Menus
   const [showMenu, setShowMenu] = useState(false)
   const [openTagMenu, setOpenTagMenu] = useState(null)
+  
+  // Refs & Pos
+  const menuButtonRef = useRef(null)
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
+
   const isCompleted = target.progress >= 100
   
   const diffKey = difficultyConfig[target.difficulty] ? target.difficulty : (difficultyConfig[target.difficulty.toLowerCase()] ? target.difficulty.toLowerCase() : 'low')
@@ -109,6 +116,27 @@ function WeeklyCard({ target, onDelete, onUpdate, onDuplicate, onEdit, tagColors
     onUpdate(target.id, { progress: newProgress, status: newProgress >= 100 ? 'completed' : 'active' })
   }
 
+  // ✅ Open Card Menu (Calculate Position)
+  const handleOpenMenu = (e) => {
+    e.stopPropagation()
+    const rect = menuButtonRef.current.getBoundingClientRect()
+    setMenuPos({ top: rect.bottom + 5, left: rect.right - 224 }) // Align Right
+    setShowMenu(true)
+  }
+
+  // ✅ Open Tag Menu (Calculate Position)
+  const handleOpenTagMenu = (e, tag) => {
+    e.stopPropagation()
+    if (isCompleted) return
+    if (openTagMenu === tag) {
+      setOpenTagMenu(null)
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect()
+      setMenuPos({ top: rect.bottom + 5, left: rect.left })
+      setOpenTagMenu(tag)
+    }
+  }
+
   const Component = enableDrag ? Reorder.Item : motion.div
   const dragProps = enableDrag ? {
     value: target, dragListener: false, dragControls: controls, drag: "y", dragElastic: 0, dragMomentum: false,
@@ -117,67 +145,100 @@ function WeeklyCard({ target, onDelete, onUpdate, onDuplicate, onEdit, tagColors
   } : {}
 
   return (
-    <Component
-      {...dragProps}
-      layout
-      initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-      // ✅ FIX 1: Removed 'transition-all'. Changed to 'transition-colors' to prevent drag jitter.
-      className={`group relative flex flex-col gap-3 rounded-xl border p-4 transition-colors duration-200 ${bgStyle} ${isCompleted ? 'opacity-50 grayscale-[0.5]' : ''} ${enableDrag ? 'touch-none' : ''}`}
-    >
-      <div className="flex items-center gap-3">
-        {/* ✅ Grip Handle: p-2 -ml-2 to match MissionCard EXACTLY */}
-        {!isCompleted && enableDrag && (
-          <div onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); controls.start(e) }} className="cursor-grab text-slate-500 hover:text-slate-300 active:cursor-grabbing p-2 -ml-2 touch-none select-none flex-shrink-0 transition-colors">
-            <GripVertical size={18} />
-          </div>
-        )}
-
-        <button type="button" onClick={handleToggleComplete} className={`relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border-2 font-mono text-xs font-bold transition-colors ${isCompleted ? 'border-emerald-500 bg-emerald-500 text-slate-900' : 'border-slate-700 bg-slate-950 text-indigo-300 hover:border-indigo-400'}`}>
-          {isCompleted ? <Check size={18} strokeWidth={3} /> : `${target.progress}%`}
-        </button>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className={`w-full text-base font-medium truncate ${isCompleted ? 'line-through text-slate-500' : 'text-slate-100'}`}>{target.title}</span>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {style && <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${style.border} ${style.bg} ${style.color} select-none`}>{target.difficulty}</span>}
-            {target.tags && target.tags.map((tag) => {
-              const savedKey = tagColors[tag]; const key = savedKey && TAG_THEMES[savedKey] ? savedKey : getHashColorKey(tag); const theme = TAG_THEMES[key]
-              return (
-                <div key={tag} className="relative">
-                   <span onClick={() => !isCompleted && setOpenTagMenu(openTagMenu === tag ? null : tag)} className={`text-xs font-bold px-2.5 py-1 rounded-md border cursor-pointer shadow-sm select-none ${theme.bg} ${theme.text} ${theme.border}`}>#{tag}</span>
-                  {openTagMenu === tag && (
-                    <div className="absolute top-9 left-0 z-30 grid grid-cols-6 gap-2 bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl w-64">
-                      {Object.entries(TAG_THEMES).map(([k, t]) => (<button key={k} onClick={() => handleTagColorChange(tag, k)} className={`w-6 h-6 rounded-full ${t.bg} ${t.border} border-2 hover:scale-110 hover:brightness-125 transition-all shadow-sm`} title={k.charAt(0).toUpperCase() + k.slice(1)} />))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="relative flex-shrink-0">
-          <button onClick={() => setShowMenu(!showMenu)} className="rounded p-1.5 text-slate-500 opacity-0 transition-all hover:bg-slate-800 hover:text-slate-200 group-hover:opacity-100"><MoreHorizontal size={18} /></button>
-          {showMenu && (
-            <div className="absolute right-0 top-8 z-50 w-56 rounded-xl border border-slate-700 bg-slate-900 p-3 shadow-2xl">
-              <p className="mb-2 text-[10px] font-bold uppercase text-slate-500 px-1">Card Color</p>
-              <div className="grid grid-cols-5 gap-2 mb-3">
-                {Object.keys(CARD_THEMES).map(c => (<button key={c} onClick={() => changeColor(c)} className={`h-7 w-7 rounded-full ${CARD_PICKER_STYLES[c]} hover:scale-110 hover:ring-2 ring-white/50 transition-all shadow-md`} title={c.charAt(0).toUpperCase() + c.slice(1)} />))}
-              </div>
-              <div className="h-px bg-slate-800 my-2" />
-              <button onClick={() => { onEdit(target); setShowMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors mb-1"><PenSquare size={14} /> Edit Details</button>
-              <button onClick={handleDuplicate} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors mb-1"><Copy size={14} /> Duplicate</button>
-              <button onClick={() => onDelete(target.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /> Delete Target</button>
+    <>
+      <Component
+        {...dragProps}
+        layout
+        initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+        className={`group relative flex flex-col gap-3 rounded-xl border p-4 transition-colors duration-200 ${bgStyle} ${isCompleted ? 'opacity-50 grayscale-[0.5]' : ''} ${enableDrag ? 'touch-none' : ''}`}
+      >
+        <div className="flex items-center gap-3">
+          {!isCompleted && enableDrag && (
+            <div onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); controls.start(e) }} className="cursor-grab text-slate-500 hover:text-slate-300 active:cursor-grabbing p-2 -ml-2 touch-none select-none flex-shrink-0 transition-colors">
+              <GripVertical size={18} />
             </div>
           )}
+
+          <button type="button" onClick={handleToggleComplete} className={`relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border-2 font-mono text-xs font-bold transition-colors ${isCompleted ? 'border-emerald-500 bg-emerald-500 text-slate-900' : 'border-slate-700 bg-slate-950 text-indigo-300 hover:border-indigo-400'}`}>
+            {isCompleted ? <Check size={18} strokeWidth={3} /> : `${target.progress}%`}
+          </button>
+
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className={`w-full text-base font-medium truncate ${isCompleted ? 'line-through text-slate-500' : 'text-slate-100'}`}>{target.title}</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {style && <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${style.border} ${style.bg} ${style.color} select-none`}>{target.difficulty}</span>}
+              {target.tags && target.tags.map((tag) => {
+                const savedKey = tagColors[tag]; const key = savedKey && TAG_THEMES[savedKey] ? savedKey : getHashColorKey(tag); const theme = TAG_THEMES[key]
+                return (
+                  <span 
+                    key={tag} 
+                    onClick={(e) => handleOpenTagMenu(e, tag)} 
+                    className={`text-xs font-bold px-2.5 py-1 rounded-md border cursor-pointer shadow-sm select-none transition-transform active:scale-95 ${theme.bg} ${theme.text} ${theme.border}`}
+                  >
+                    #{tag}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="relative flex-shrink-0">
+            <button 
+              ref={menuButtonRef}
+              onClick={handleOpenMenu} 
+              className="rounded p-1.5 text-slate-500 opacity-0 transition-all hover:bg-slate-800 hover:text-slate-200 group-hover:opacity-100"
+            >
+              <MoreHorizontal size={18} />
+            </button>
+          </div>
         </div>
-      </div>
-      <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden mt-1">
-        <motion.div className={`h-full ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-500'}`} initial={{ width: 0 }} animate={{ width: `${target.progress}%` }} transition={{ duration: 0.5 }} />
-      </div>
-    </Component>
+        <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden mt-1">
+          <motion.div className={`h-full ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-500'}`} initial={{ width: 0 }} animate={{ width: `${target.progress}%` }} transition={{ duration: 0.5 }} />
+        </div>
+      </Component>
+
+      {/* ✅ Portal for Card Menu */}
+      {showMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={() => setShowMenu(false)} />
+          <div 
+            className="fixed z-[110] w-56 rounded-xl border border-slate-700 bg-slate-900 p-3 shadow-2xl"
+            style={{ top: menuPos.top, left: menuPos.left }}
+          >
+            <p className="mb-2 text-[10px] font-bold uppercase text-slate-500 px-1">Card Color</p>
+            <div className="grid grid-cols-5 gap-2 mb-3">
+              {Object.keys(CARD_THEMES).map(c => (
+                <button key={c} onClick={() => changeColor(c)} className={`h-7 w-7 rounded-full ${CARD_PICKER_STYLES[c]} hover:scale-110 hover:ring-2 ring-white/50 transition-all shadow-md`} title={c.charAt(0).toUpperCase() + c.slice(1)} />
+              ))}
+            </div>
+            <div className="h-px bg-slate-800 my-2" />
+            
+            <button onClick={() => { onEdit(target); setShowMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors mb-1"><PenSquare size={14} /> Edit Details</button>
+            <button onClick={handleDuplicate} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors mb-1"><Copy size={14} /> Duplicate</button>
+            <button onClick={() => onDelete(target.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /> Delete Target</button>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* ✅ Portal for Tag Menu */}
+      {openTagMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={() => setOpenTagMenu(null)} />
+          <div 
+            className="fixed z-[110] grid grid-cols-6 gap-2 bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl w-64"
+            style={{ top: menuPos.top, left: menuPos.left }}
+          >
+            {Object.entries(TAG_THEMES).map(([k, t]) => (
+              <button key={k} onClick={() => handleTagColorChange(openTagMenu, k)} className={`w-6 h-6 rounded-full ${t.bg} ${t.border} border-2 hover:scale-110 hover:brightness-125 transition-all shadow-sm`} title={k.charAt(0).toUpperCase() + k.slice(1)} />
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </>
   )
 }
 
@@ -186,7 +247,7 @@ export default function WeeklyPlan() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingTarget, setEditingTarget] = useState(null)
 
-  // Filter States (Multi-select arrays)
+  // Filter States
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDifficulties, setSelectedDifficulties] = useState([])
   const [selectedTags, setSelectedTags] = useState([])
@@ -197,7 +258,7 @@ export default function WeeklyPlan() {
     return Array.from(tags)
   }, [weeklyTargets])
 
-  // Filter Logic (Multi-select)
+  // Filter Logic
   const filteredTargets = weeklyTargets.filter(t => {
     const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesDifficulty = selectedDifficulties.length === 0 || selectedDifficulties.includes(t.difficulty)
