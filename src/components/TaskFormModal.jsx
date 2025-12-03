@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, Tag as TagIcon, PlusCircle } from 'lucide-react'
-import { useCultivation } from '../context/CultivationContext'
-import { DIFFICULTY_TIERS } from '../context/CultivationContext' // استدعاء الثوابت
+import { X, PlusCircle, Repeat, Save, PenSquare, Feather } from 'lucide-react'
+import { useCultivation, DIFFICULTY_TIERS } from '../context/CultivationContext'
 
 const TAG_COLORS = [
-  'bg-red-500/20 text-red-200 border-red-500/30',
-  'bg-orange-500/20 text-orange-200 border-orange-500/30',
-  'bg-amber-500/20 text-amber-200 border-amber-500/30',
-  'bg-emerald-500/20 text-emerald-200 border-emerald-500/30',
-  'bg-cyan-500/20 text-cyan-200 border-cyan-500/30',
-  'bg-blue-500/20 text-blue-200 border-blue-500/30',
-  'bg-violet-500/20 text-violet-200 border-violet-500/30',
-  'bg-fuchsia-500/20 text-fuchsia-200 border-fuchsia-500/30',
+  'bg-red-500/10 text-red-400 border-red-500/50',
+  'bg-orange-500/10 text-orange-400 border-orange-500/50',
+  'bg-amber-500/10 text-amber-400 border-amber-500/50',
+  'bg-emerald-500/10 text-emerald-400 border-emerald-500/50',
+  'bg-cyan-500/10 text-cyan-400 border-cyan-500/50',
+  'bg-blue-500/10 text-blue-400 border-blue-500/50',
+  'bg-violet-500/10 text-violet-400 border-violet-500/50',
+  'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/50',
+  'bg-pink-500/10 text-pink-400 border-pink-500/50',
+  'bg-lime-500/10 text-lime-400 border-lime-500/50',
 ]
 
 const getTagColor = (text) => {
@@ -21,21 +22,33 @@ const getTagColor = (text) => {
   return TAG_COLORS[Math.abs(hash % TAG_COLORS.length)]
 }
 
-export default function TaskFormModal({ isOpen, onClose, onSubmit }) {
+export default function TaskFormModal({ isOpen, onClose, onSubmit, initialData = null }) {
   const { knownTags } = useCultivation()
   const [title, setTitle] = useState('')
   const [difficulty, setDifficulty] = useState('low')
   const [tags, setTags] = useState([])
   const [currentTagInput, setCurrentTagInput] = useState('')
+  const [isDaily, setIsDaily] = useState(false)
+  const [isTrivial, setIsTrivial] = useState(false) // ✅ New Option
 
   useEffect(() => {
     if (isOpen) {
-      setTitle('')
-      setDifficulty('low')
-      setTags([])
-      setCurrentTagInput('')
+      if (initialData) {
+        setTitle(initialData.title)
+        setDifficulty(initialData.difficulty)
+        setTags(initialData.tags || [])
+        setIsDaily(initialData.repeat === 'daily')
+        setIsTrivial(initialData.isTrivial || false)
+      } else {
+        setTitle('')
+        setDifficulty('low')
+        setTags([])
+        setCurrentTagInput('')
+        setIsDaily(false)
+        setIsTrivial(false)
+      }
     }
-  }, [isOpen])
+  }, [isOpen, initialData])
 
   const handleTagKeyDown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); addTag(currentTagInput) }
@@ -55,13 +68,19 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit }) {
     if (!trimmedTitle) return
     const finalTags = [...tags]
     if (currentTagInput.trim() && !finalTags.includes(currentTagInput.trim())) finalTags.push(currentTagInput.trim())
-    onSubmit({ title: trimmedTitle, difficulty, tags: finalTags })
+    
+    onSubmit({ 
+      title: trimmedTitle, 
+      difficulty, 
+      tags: finalTags,
+      repeat: isDaily ? 'daily' : 'once',
+      isTrivial // Pass this
+    })
     onClose()
   }
 
   const suggestedTags = knownTags.filter(t => !tags.includes(t))
 
-  // ألوان الـ 7 مستويات
   const diffStyles = {
     'low': 'border-emerald-500 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20',
     'low-med': 'border-teal-500 text-teal-400 bg-teal-500/10 hover:bg-teal-500/20',
@@ -77,30 +96,68 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit }) {
       {isOpen && (
         <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
           <motion.div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-amber-500/30 bg-slate-900 shadow-2xl" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()}>
-            <div className="border-b border-amber-500/20 bg-slate-800/50 px-6 py-4">
-              <h2 className="text-lg font-bold uppercase tracking-widest text-amber-100">Issue New Mandate</h2>
+            <div className="border-b border-amber-500/20 bg-slate-800/50 px-6 py-4 flex items-center gap-2">
+              {initialData ? <PenSquare size={20} className="text-amber-400"/> : <PlusCircle size={20} className="text-amber-400"/>}
+              <h2 className="text-lg font-bold uppercase tracking-widest text-amber-100">
+                {initialData ? 'Modify Mandate' : 'Issue New Mandate'}
+              </h2>
             </div>
             <form onSubmit={handleConfirm} className="space-y-6 px-6 py-6">
+              
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Mission Objective</label>
                 <input autoFocus type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Deep Work Session" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-emerald-50 outline-none focus:border-amber-400 transition-all" />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Difficulty Grade</label>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(DIFFICULTY_TIERS).map(([key, data]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setDifficulty(key)}
-                      className={`rounded px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide border transition-all ${difficulty === key ? `${diffStyles[key]} ring-1 ring-white/50` : 'border-slate-700 text-slate-500 hover:border-slate-500'}`}
-                    >
-                      {data.label}
-                    </button>
-                  ))}
+              {/* Options Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Daily Toggle */}
+                <div 
+                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${isDaily ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-slate-950 border-slate-800 hover:border-slate-600'}`} 
+                  onClick={() => setIsDaily(!isDaily)}
+                >
+                  <div className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${isDaily ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-500'}`}>
+                    <Repeat size={12} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className={`text-xs font-bold ${isDaily ? 'text-emerald-400' : 'text-slate-400'}`}>Daily Recurring</span>
+                    <span className="text-[9px] text-slate-500">Resets at 00:00</span>
+                  </div>
+                </div>
+
+                {/* ✅ Trivial Toggle */}
+                <div 
+                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${isTrivial ? 'bg-slate-700 border-slate-500' : 'bg-slate-950 border-slate-800 hover:border-slate-600'}`} 
+                  onClick={() => setIsTrivial(!isTrivial)}
+                >
+                  <div className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${isTrivial ? 'bg-slate-400 text-slate-900' : 'bg-slate-800 text-slate-500'}`}>
+                    <Feather size={12} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className={`text-xs font-bold ${isTrivial ? 'text-slate-300' : 'text-slate-400'}`}>Mortal Routine</span>
+                    <span className="text-[9px] text-slate-500">0 XP Awarded</span>
+                  </div>
                 </div>
               </div>
+
+              {/* Difficulty - Hide if Trivial */}
+              {!isTrivial && (
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Difficulty Grade</label>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(DIFFICULTY_TIERS).map(([key, data]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setDifficulty(key)}
+                        className={`rounded px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide border transition-all ${difficulty === key ? `${diffStyles[key]} ring-1 ring-white/50` : 'border-slate-700 text-slate-500 hover:border-slate-500'}`}
+                      >
+                        {data.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tags</label>
@@ -124,7 +181,10 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit }) {
 
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800">Retreat</button>
-                <button type="submit" disabled={!title.trim()} className="rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-2 text-xs font-bold uppercase tracking-wider text-slate-950 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50">Confirm</button>
+                <button type="submit" disabled={!title.trim()} className="rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-2 text-xs font-bold uppercase tracking-wider text-slate-950 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 flex items-center gap-2">
+                  {initialData ? <Save size={14}/> : <PlusCircle size={14}/>}
+                  {initialData ? 'Update Mandate' : 'Confirm'}
+                </button>
               </div>
             </form>
           </motion.div>
