@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Reorder, useDragControls, motion } from 'framer-motion'
-import { Trash2, Check, MoreHorizontal, GripVertical, Repeat, PenSquare, Copy, Target } from 'lucide-react' // ✅ Added Target Icon
+import { Trash2, Check, MoreHorizontal, GripVertical, Repeat, PenSquare, Copy, Target } from 'lucide-react'
 import { useCultivation } from '../context/CultivationContext.jsx'
-import ContributionModal from './ContributionModal.jsx' // ✅ Import
+import ContributionModal from './ContributionModal.jsx'
 
-// ... (KEEP ALL TAG_THEMES, CARD_THEMES, CARD_PICKER_STYLES, difficultyConfig, getHashColorKey AS IS) ...
 const TAG_THEMES = {
   red:     { bg: 'bg-red-500/20', text: 'text-red-200', border: 'border-red-500/50' },
   orange:  { bg: 'bg-orange-500/20', text: 'text-orange-200', border: 'border-orange-500/50' },
@@ -76,7 +75,6 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, onEdit
   const [showMenu, setShowMenu] = useState(false)
   const [openTagMenu, setOpenTagMenu] = useState(null)
   
-  // ✅ Contribution Modal State
   const [showContribution, setShowContribution] = useState(false)
 
   useEffect(() => { setEditTitle(title) }, [title])
@@ -152,7 +150,6 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, onEdit
         </div>
 
         <div className="relative flex-shrink-0 flex items-center gap-1">
-          {/* ✅ New Contribution Icon Button */}
           <button 
              onClick={() => setShowContribution(true)} 
              className="rounded p-1.5 text-indigo-400 opacity-0 transition-all hover:bg-indigo-500/20 hover:text-indigo-300 group-hover:opacity-100"
@@ -181,11 +178,12 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, onEdit
         </div>
       </Component>
 
-      {/* ✅ Modal Render */}
+      {/* ✅ Pass taskTags to the Modal to enable smart filtering */}
       <ContributionModal 
         isOpen={showContribution} 
         onClose={() => setShowContribution(false)} 
         taskTitle={title} 
+        taskTags={tags} 
       />
     </>
   )

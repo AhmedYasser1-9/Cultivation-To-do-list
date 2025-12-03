@@ -307,11 +307,21 @@ export function CultivationProvider({ children }) {
   function contributeToWeeklyTarget(id, amount) {
     setWeeklyTargets(prev => prev.map(t => {
       if (t.id === id) {
-        const newProgress = Math.min(100, Math.max(0, t.progress + amount))
-        return { ...t, progress: newProgress, status: newProgress >= 100 ? 'completed' : 'active' }
+        const numeric = Number.isNaN(Number(amount)) ? 0 : Number(amount)
+        const newProgress = Math.min(100, Math.max(0, numeric))
+        return {
+          ...t,
+          progress: newProgress,
+          status: newProgress >= 100 ? 'completed' : 'active',
+        }
       }
       return t
     }))
+  }
+
+  // ✅ New Function: Reorder Weekly Targets
+  function reorderWeeklyTargets(newOrder) {
+    setWeeklyTargets(newOrder)
   }
 
   function hardReset() {
@@ -327,7 +337,8 @@ export function CultivationProvider({ children }) {
       weeklyTargets,
       gainQi, completeTask, processDailyHarvest, 
       addTask, updateTask, deleteTask, toggleTaskCompletion, reorderTasks, setTagColor, duplicateTask,
-      addWeeklyTarget, updateWeeklyTarget, deleteWeeklyTarget, duplicateWeeklyTarget, contributeToWeeklyTarget, // ✅ Exported all
+      addWeeklyTarget, updateWeeklyTarget, deleteWeeklyTarget, duplicateWeeklyTarget, contributeToWeeklyTarget, 
+      reorderWeeklyTargets, // ✅ Export this new function
       forceStartNewDay, extendLateNight, disableLateNight, undoDailyReset, hardReset
     }}>
       {children}
