@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { motion, AnimatePresence, Reorder } from 'framer-motion'
-import { Plus, User, CheckCircle2, ListTodo, Sun } from 'lucide-react' // Added Sun Icon
+import { Plus, User, CheckCircle2, ListTodo, Sun } from 'lucide-react'
 import { useCultivation, DIFFICULTY_TIERS } from '../context/CultivationContext.jsx'
 import MissionCard from './MissionCard.jsx'
 import TaskFormModal from './TaskFormModal.jsx'
-import DailyHarvestModal from './DailyHarvestModal.jsx' // Import
+import DailyHarvestModal from './DailyHarvestModal.jsx'
 
 export default function MissionBoard() {
   const {
@@ -13,7 +13,7 @@ export default function MissionBoard() {
   } = useCultivation()
   
   const [isFormOpen, setIsFormOpen] = useState(false)
-  const [isHarvestOpen, setIsHarvestOpen] = useState(false) // Harvest Modal
+  const [isHarvestOpen, setIsHarvestOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('todo')
 
   const todoTasks = tasks.filter(t => !t.isCompleted)
@@ -28,10 +28,8 @@ export default function MissionBoard() {
     if (!task) return
 
     if (!task.isCompleted) {
-      // 1. Just award difficulty XP immediately
       completeTask(task.difficulty)
     } else {
-      // 2. Penalty for unchecking
       const key = String(task.difficulty).toLowerCase()
       const amount = DIFFICULTY_TIERS[key]?.xp || 10
       gainQi(-amount)
@@ -46,7 +44,8 @@ export default function MissionBoard() {
 
   return (
     <>
-      <section className="relative overflow-hidden rounded-3xl border border-amber-900/30 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-md">
+      {/* 🛑 FIX: Removed 'overflow-hidden' to prevent clipping during drag */}
+      <section className="relative rounded-3xl border border-amber-900/30 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-md">
         
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -60,7 +59,6 @@ export default function MissionBoard() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Harvest Button */}
             <motion.button 
               whileHover={{ scale: 1.05 }} 
               onClick={() => setIsHarvestOpen(true)}
@@ -115,7 +113,6 @@ export default function MissionBoard() {
 
       <TaskFormModal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} onSubmit={(data) => addTask(data)} />
       
-      {/* Harvest Modal */}
       <DailyHarvestModal 
         isOpen={isHarvestOpen} 
         onClose={() => setIsHarvestOpen(false)} 

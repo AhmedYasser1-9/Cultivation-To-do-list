@@ -1,9 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Reorder, useDragControls, motion } from 'framer-motion'
 import { Trash2, Check, MoreHorizontal, GripVertical } from 'lucide-react'
 import { useCultivation } from '../context/CultivationContext.jsx'
 
-// ألوان التاجات المتاحة
 const TAG_PALETTE = {
   red: 'bg-red-500/20 text-red-200 border-red-500/30',
   orange: 'bg-orange-500/20 text-orange-200 border-orange-500/30',
@@ -33,8 +32,8 @@ const difficultyConfig = {
   'high': { color: 'text-indigo-400', border: 'border-indigo-500/30', bg: 'bg-indigo-500/10' },
   'high-extreme': { color: 'text-purple-400', border: 'border-purple-500/30', bg: 'bg-purple-500/10' },
   'extreme': { color: 'text-rose-400', border: 'border-rose-500/30', bg: 'bg-rose-500/10' },
-  // Fallback for old tasks
-  'Low': { color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'bg-emerald-500/10' }, 
+  // Fallbacks
+  'Low': { color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'bg-emerald-500/10' },
   'Medium': { color: 'text-sky-400', border: 'border-sky-500/30', bg: 'bg-sky-500/10' },
   'High': { color: 'text-indigo-400', border: 'border-indigo-500/30', bg: 'bg-indigo-500/10' },
   'Extreme': { color: 'text-rose-400', border: 'border-rose-500/30', bg: 'bg-rose-500/10' },
@@ -57,12 +56,27 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, enable
   const [showMenu, setShowMenu] = useState(false)
   const [openTagMenu, setOpenTagMenu] = useState(null)
 
-  const style = difficultyConfig[difficulty] || difficultyConfig.Low
+  useEffect(() => {
+    setEditTitle(title)
+  }, [title])
+
+  const diffKey = difficultyConfig[difficulty] ? difficulty : (difficultyConfig[difficulty.toLowerCase()] ? difficulty.toLowerCase() : 'low')
+  const style = difficultyConfig[diffKey]
   const bgStyle = BG_COLORS[color] || BG_COLORS.default
 
-  const handleBlur = () => { setIsEditing(false); if (editTitle.trim() !== title) onUpdate(id, { title: editTitle }) }
-  const handleKeyDown = (e) => { if (e.key === 'Enter') handleBlur() }
-  const changeColor = (newColor) => { onUpdate(id, { color: newColor }); setShowMenu(false) }
+  const handleBlur = () => {
+    setIsEditing(false)
+    if (editTitle.trim() !== title && onUpdate) {
+      onUpdate(id, { title: editTitle })
+    }
+  }
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') handleBlur()
+  }
+  const changeColor = (newColor) => {
+    if (onUpdate) onUpdate(id, { color: newColor })
+    setShowMenu(false)
+  }
 
   const handleTagColorChange = (tag, colorKey) => {
     setTagColor(tag, colorKey)
@@ -74,38 +88,49 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, enable
   const dragProps = enableDrag ? {
     value: task,
     dragListener: false,
-    dragControls: controls
+    dragControls: controls,
+    drag: "y", 
+    dragElastic: 0,
+    dragMomentum: false,
+    whileDrag: { 
+      scale: 1.02, 
+      boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)", 
+      zIndex: 50,
+      cursor: "grabbing" 
+    },
+    transition: { duration: 0.2 } 
   } : {}
 
   return (
     <Component
       {...dragProps}
       layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
+      // 🛑 FIX: Removed 'y' animation to prevent conflict with drag physics
+      initial={{ opacity: 0, scale: 0.98 }} 
+      animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      // إضافة select-none للكارد كله لمنع التظليل العرضي أثناء الحركة السريعة
-      className={`group relative flex items-center gap-3 rounded-lg border p-3 transition-all duration-200 ${bgStyle} ${isCompleted ? 'opacity-50 grayscale-[0.5]' : ''} ${enableDrag ? 'touch-none' : ''}`}
+      className={`group relative flex items-center gap-3 rounded-lg border p-3 transition-colors duration-200 ${bgStyle} ${isCompleted ? 'opacity-50 grayscale-[0.5]' : ''} ${enableDrag ? 'touch-none' : ''}`}
     >
-      {/* 🛑 FIX: Drag Handle Update */}
+      {/* Drag Handle */}
       {!isCompleted && enableDrag && (
         <div 
           onPointerDown={(e) => {
-            e.preventDefault() // 1. يمنع المتصفح من بدء تحديد النص
-            e.stopPropagation() // 2. يمنع الحدث من الوصول لعناصر أخرى
-            controls.start(e) // 3. يبدأ السحب
+            e.preventDefault() 
+            e.stopPropagation() 
+            controls.start(e) 
           }}
-          // 4. touch-none و select-none تمنع التفاعل النصي
-          className="cursor-grab text-slate-600 hover:text-slate-400 active:cursor-grabbing p-1 touch-none select-none"
+          className="cursor-grab text-slate-600 hover:text-slate-400 active:cursor-grabbing p-2 -ml-2 touch-none select-none flex-shrink-0"
         >
           <GripVertical size={16} />
         </div>
       )}
 
+      {/* Checkbox */}
       <button onClick={() => onToggle(id)} className={`relative z-10 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border transition-all ${isCompleted ? 'border-amber-500 bg-amber-500 text-slate-900' : 'border-slate-600 bg-slate-950/50 hover:border-amber-400/50'}`}>
         {isCompleted && <Check size={14} strokeWidth={3} />}
       </button>
 
+      {/* Content */}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center justify-between gap-2">
           {isEditing ? (
@@ -120,7 +145,6 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, enable
           ) : (
             <span 
               onClick={() => !isCompleted && setIsEditing(true)} 
-              // select-text يسمح بالتحديد فقط عند الرغبة، لكن المقبض محمي الآن
               className={`w-full text-sm font-medium cursor-text truncate ${isCompleted ? 'line-through text-slate-500' : 'text-slate-200 hover:text-white'}`}
             >
               {title}
@@ -129,7 +153,7 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, enable
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-           <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${style.border} ${style.bg} ${style.color} select-none`}>{difficulty}</span>
+          {style && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${style.border} ${style.bg} ${style.color} select-none`}>{difficulty}</span>}
           
           {tags.map((tag) => {
             const savedColor = tagColors[tag]
@@ -142,7 +166,6 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, enable
                 >
                   #{tag}
                 </span>
-                
                 {openTagMenu === tag && (
                   <div className="absolute top-6 left-0 z-30 flex gap-1 bg-slate-900 border border-slate-700 p-1.5 rounded-lg shadow-xl">
                     {Object.keys(TAG_PALETTE).map(c => (
@@ -156,12 +179,13 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, enable
         </div>
       </div>
 
-      <div className="relative">
+      {/* Menu */}
+      <div className="relative flex-shrink-0">
         <button onClick={() => setShowMenu(!showMenu)} className="rounded p-1 text-slate-500 opacity-0 transition-opacity hover:bg-slate-800 hover:text-slate-200 group-hover:opacity-100">
           <MoreHorizontal size={16} />
         </button>
         {showMenu && (
-          <div className="absolute right-0 top-8 z-20 w-48 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl z-50">
+          <div className="absolute right-0 top-8 z-50 w-48 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl">
             <p className="mb-2 text-[10px] font-bold uppercase text-slate-500 px-1">Background Color</p>
             <div className="grid grid-cols-4 gap-1 mb-2">
               {Object.keys(BG_COLORS).map(c => (
