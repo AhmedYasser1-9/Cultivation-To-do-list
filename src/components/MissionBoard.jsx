@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence, Reorder } from 'framer-motion'
-import { Plus, User, CheckCircle2, ListTodo, Sun, Search, Filter, X, Tag, Trash2 } from 'lucide-react'
+import { Plus, User, CheckCircle2, ListTodo, Sun, Search, Filter, X, Tag, Trash2, Zap, ArrowRight } from 'lucide-react'
 import { useCultivation, DIFFICULTY_TIERS } from '../context/CultivationContext.jsx'
 import MissionCard from './MissionCard.jsx'
 import TaskFormModal from './TaskFormModal.jsx'
@@ -41,6 +41,9 @@ export default function MissionBoard() {
   const [showFilters, setShowFilters] = useState(false)
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDanger: false })
 
+  // ✅ Quick Add State
+  const [quickAddTitle, setQuickAddTitle] = useState('')
+
   const availableTags = useMemo(() => {
     const tags = new Set(tasks.flatMap(t => t.tags || []))
     return ['All', ...Array.from(tags)]
@@ -68,7 +71,7 @@ export default function MissionBoard() {
     const task = tasks.find((t) => t.id === id)
     if (!task) return
     if (!task.isCompleted) {
-      completeTask(task) // Pass full task now to check for isTrivial
+      completeTask(task)
     } else {
       if (!task.isTrivial) {
         const key = String(task.difficulty).toLowerCase()
@@ -90,6 +93,22 @@ export default function MissionBoard() {
       isOpen: true, title: "Destroy Mandate", message: "Are you sure you want to burn this scroll?", confirmText: "Destroy", isDanger: true,
       onConfirm: () => deleteTask(id)
     })
+  }
+
+  // ✅ Quick Add Handler
+  const handleQuickAdd = (e) => {
+    e.preventDefault()
+    if (!quickAddTitle.trim()) return
+    addTask({
+      title: quickAddTitle.trim(),
+      difficulty: 'low', // Default
+      repeat: 'once', // Default
+      isTrivial: false,
+      tags: [],
+      notes: '',
+      subtasks: []
+    })
+    setQuickAddTitle('')
   }
 
   const confirmHarvest = (totalMinutes, streaks) => { processDailyHarvest(totalMinutes, streaks); setIsHarvestOpen(false) }
@@ -117,7 +136,7 @@ export default function MissionBoard() {
           </div>
         </div>
 
-        {/* Filters Toolbar (Same as before) */}
+        {/* Filters Toolbar */}
         <div className="mb-4 space-y-3">
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -152,7 +171,8 @@ export default function MissionBoard() {
           </AnimatePresence>
         </div>
 
-        <div className="flex flex-col gap-2 min-h-[200px]">
+        {/* Task List */}
+        <div className="flex flex-col gap-2 min-h-[200px] mb-4">
           {activeTab === 'todo' ? (
             <Reorder.Group axis="y" values={todoTasks} onReorder={handleReorder} className="flex flex-col gap-2">
               {todoTasks.length > 0 ? (
@@ -175,6 +195,30 @@ export default function MissionBoard() {
             </div>
           )}
         </div>
+
+        {/* ✅ Quick Flash Add Bar */}
+        {activeTab === 'todo' && (
+          <form onSubmit={handleQuickAdd} className="relative group">
+            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+              <Zap size={16} className="text-slate-500 group-focus-within:text-amber-400 transition-colors" />
+            </div>
+            <input 
+              type="text" 
+              value={quickAddTitle}
+              onChange={(e) => setQuickAddTitle(e.target.value)}
+              placeholder="Quick Flash: Type mandate & press Enter..." 
+              className="w-full rounded-xl border border-slate-700 bg-slate-950/80 pl-12 pr-12 py-3 text-sm text-slate-200 outline-none focus:border-amber-500/50 focus:bg-slate-900 transition-all placeholder:text-slate-600 shadow-inner"
+            />
+            <button 
+              type="submit"
+              disabled={!quickAddTitle.trim()}
+              className="absolute inset-y-1 right-1 p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-emerald-600 hover:text-white disabled:opacity-0 disabled:scale-90 transition-all"
+            >
+              <ArrowRight size={16} />
+            </button>
+          </form>
+        )}
+
       </section>
 
       <TaskFormModal isOpen={isFormOpen} onClose={() => { setIsFormOpen(false); setEditingTask(null); }} onSubmit={handleFormSubmit} initialData={editingTask} />

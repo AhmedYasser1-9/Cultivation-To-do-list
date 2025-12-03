@@ -103,12 +103,17 @@ export function CultivationProvider({ children }) {
   const currentRealm = REALMS[realmIndex]
   const nextRealm = REALMS[realmIndex + 1] || REALMS[REALMS.length - 1]
 
+  // ✅ Updated Reset Logic for Flexible Reincarnation
   function performReset(dateKey) {
     const snapshot = {
       lastLoginDate: state.lastLoginDate,
       todayTotalMinutes: state.todayTotalMinutes,
       enduranceMilestonesAwarded: state.enduranceMilestonesAwarded,
     }
+    
+    // Get current day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+    const todayDayIndex = new Date().getDay()
+
     setState(prev => ({ 
       ...prev, 
       lastLoginDate: dateKey, 
@@ -116,10 +121,28 @@ export function CultivationProvider({ children }) {
       enduranceMilestonesAwarded: [],
       previousDayState: snapshot 
     }))
+
     setTasks(prevTasks => prevTasks.map(task => {
+      let shouldReset = false
+
+      // 1. Classic Daily
       if (task.repeat === 'daily') {
-        return { ...task, isCompleted: false }
+        shouldReset = true
+      } 
+      // 2. Custom Repeat (Flexible Reincarnation)
+      else if (task.repeat === 'custom' && task.repeatDays) {
+        // Reset only if today matches one of the selected days
+        if (task.repeatDays.includes(todayDayIndex)) {
+          shouldReset = true
+        }
       }
+
+      if (shouldReset) {
+        // Also uncheck subtasks on reset if desired (optional logic, kept simple for now)
+        const resetSubtasks = task.subtasks ? task.subtasks.map(st => ({ ...st, completed: false })) : []
+        return { ...task, isCompleted: false, subtasks: resetSubtasks }
+      }
+      
       return task
     }))
   }
@@ -227,7 +250,10 @@ export function CultivationProvider({ children }) {
       tags: [], 
       color: 'default', 
       repeat: 'once',
-      isTrivial: false, 
+      isTrivial: false,
+      notes: '', // ✅ New
+      subtasks: [], // ✅ New
+      repeatDays: [], // ✅ New for Custom Repeat
       ...task 
     }
     setTasks(prev => [newTask, ...prev])
@@ -249,11 +275,10 @@ export function CultivationProvider({ children }) {
   function toggleTaskCompletion(id) { setTasks(prev => prev.map(t => t.id === id ? { ...t, isCompleted: !t.isCompleted } : t)) }
   function setTagColor(tagName, colorKey) { setTagColors(prev => ({ ...prev, [tagName]: colorKey })) }
 
-  // ✅ Add Weekly Target (Updates knownTags!)
+  // ✅ Add Weekly Target
   function addWeeklyTarget(targetData) {
     const data = typeof targetData === 'string' ? { title: targetData } : targetData
     
-    // ✅ Ensure tags are added to global knownTags list
     if (data.tags?.length > 0) {
       setState(prev => {
         const newTags = data.tags.filter(t => !prev.knownTags.includes(t))
@@ -274,7 +299,6 @@ export function CultivationProvider({ children }) {
     setWeeklyTargets(prev => [newTarget, ...prev])
   }
 
-  // ✅ New Duplicate Function for Weekly
   function duplicateWeeklyTarget(id) {
     const original = weeklyTargets.find(t => t.id === id)
     if (!original) return
@@ -283,14 +307,13 @@ export function CultivationProvider({ children }) {
       ...original,
       id: crypto.randomUUID(),
       title: `${original.title} (Copy)`,
-      progress: 0, // Reset progress on duplicate
+      progress: 0,
       createdAt: new Date().toISOString()
     }
     setWeeklyTargets(prev => [newTarget, ...prev])
   }
 
   function updateWeeklyTarget(id, updates) {
-    // Also update knownTags if tags changed during edit
     if (updates.tags?.length > 0) {
       setState(prev => {
         const newTags = updates.tags.filter(t => !prev.knownTags.includes(t))
@@ -319,7 +342,6 @@ export function CultivationProvider({ children }) {
     }))
   }
 
-  // ✅ New Function: Reorder Weekly Targets
   function reorderWeeklyTargets(newOrder) {
     setWeeklyTargets(newOrder)
   }
@@ -338,7 +360,7 @@ export function CultivationProvider({ children }) {
       gainQi, completeTask, processDailyHarvest, 
       addTask, updateTask, deleteTask, toggleTaskCompletion, reorderTasks, setTagColor, duplicateTask,
       addWeeklyTarget, updateWeeklyTarget, deleteWeeklyTarget, duplicateWeeklyTarget, contributeToWeeklyTarget, 
-      reorderWeeklyTargets, // ✅ Export this new function
+      reorderWeeklyTargets,
       forceStartNewDay, extendLateNight, disableLateNight, undoDailyReset, hardReset
     }}>
       {children}

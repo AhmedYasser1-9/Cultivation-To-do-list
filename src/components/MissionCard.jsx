@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom' // ✅ Import Portal
 import { Reorder, useDragControls, motion } from 'framer-motion'
 import { Trash2, Check, MoreHorizontal, GripVertical, Repeat, PenSquare, Copy, Target } from 'lucide-react'
 import { useCultivation } from '../context/CultivationContext.jsx'
@@ -72,9 +73,16 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, onEdit
   const controls = useDragControls()
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(title)
+  
+  // State for Menus
   const [showMenu, setShowMenu] = useState(false)
   const [openTagMenu, setOpenTagMenu] = useState(null)
   
+  // Refs for positioning
+  const menuButtonRef = useRef(null)
+  const tagRefs = useRef({})
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
+
   const [showContribution, setShowContribution] = useState(false)
 
   useEffect(() => { setEditTitle(title) }, [title])
@@ -96,6 +104,28 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, onEdit
   const handleDuplicate = () => {
     duplicateTask(id)
     setShowMenu(false)
+  }
+
+  // ✅ Open Card Menu (Calculate Position)
+  const handleOpenMenu = (e) => {
+    e.stopPropagation()
+    const rect = menuButtonRef.current.getBoundingClientRect()
+    // Align menu: Top = button bottom, Right = button right
+    setMenuPos({ top: rect.bottom + 5, left: rect.right - 224 }) // 224px is w-56
+    setShowMenu(true)
+  }
+
+  // ✅ Open Tag Menu (Calculate Position)
+  const handleOpenTagMenu = (e, tag) => {
+    e.stopPropagation()
+    if (isCompleted) return
+    if (openTagMenu === tag) {
+      setOpenTagMenu(null)
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect()
+      setMenuPos({ top: rect.bottom + 5, left: rect.left })
+      setOpenTagMenu(tag)
+    }
   }
 
   const Component = enableDrag ? Reorder.Item : motion.div
@@ -134,16 +164,13 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, onEdit
             {tags.map((tag) => {
               const savedKey = tagColors[tag]; const key = savedKey && TAG_THEMES[savedKey] ? savedKey : getHashColorKey(tag); const theme = TAG_THEMES[key]
               return (
-                <div key={tag} className="relative">
-                  <span onClick={() => !isCompleted && setOpenTagMenu(openTagMenu === tag ? null : tag)} className={`text-xs font-bold px-2.5 py-1 rounded-md border cursor-pointer shadow-sm select-none transition-transform active:scale-95 ${theme.bg} ${theme.text} ${theme.border}`}>#{tag}</span>
-                  {openTagMenu === tag && (
-                    <div className="absolute top-9 left-0 z-30 grid grid-cols-6 gap-2 bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl w-64">
-                      {Object.entries(TAG_THEMES).map(([k, t]) => (
-                        <button key={k} onClick={() => handleTagColorChange(tag, k)} className={`w-6 h-6 rounded-full ${t.bg} ${t.border} border-2 hover:scale-110 hover:brightness-125 transition-all shadow-sm`} title={k.charAt(0).toUpperCase() + k.slice(1)} />
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <span 
+                  key={tag} 
+                  onClick={(e) => handleOpenTagMenu(e, tag)} 
+                  className={`text-xs font-bold px-2.5 py-1 rounded-md border cursor-pointer shadow-sm select-none transition-transform active:scale-95 ${theme.bg} ${theme.text} ${theme.border}`}
+                >
+                  #{tag}
+                </span>
               )
             })}
           </div>
@@ -158,27 +185,57 @@ export default function MissionCard({ task, onToggle, onDelete, onUpdate, onEdit
             <Target size={18} />
           </button>
 
-          <button onClick={() => setShowMenu(!showMenu)} className="rounded p-1.5 text-slate-500 opacity-0 transition-all hover:bg-slate-800 hover:text-slate-200 group-hover:opacity-100"><MoreHorizontal size={18} /></button>
-          {showMenu && (
-            <div className="absolute right-0 top-8 z-50 w-56 rounded-xl border border-slate-700 bg-slate-900 p-3 shadow-2xl">
-              <p className="mb-2 text-[10px] font-bold uppercase text-slate-500 px-1">Card Color</p>
-              <div className="grid grid-cols-5 gap-2 mb-3">
-                {Object.keys(CARD_THEMES).map(c => (
-                  <button key={c} onClick={() => changeColor(c)} className={`h-7 w-7 rounded-full ${CARD_PICKER_STYLES[c]} hover:scale-110 hover:ring-2 ring-white/50 transition-all shadow-md`} title={c.charAt(0).toUpperCase() + c.slice(1)} />
-                ))}
-              </div>
-              <div className="h-px bg-slate-800 my-2" />
-              
-              <button onClick={() => { onEdit(); setShowMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors mb-1"><PenSquare size={14} /> Edit Details</button>
-              <button onClick={handleDuplicate} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors mb-1"><Copy size={14} /> Duplicate</button>
-              
-              <button onClick={() => onDelete(id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /> Delete Mandate</button>
-            </div>
-          )}
+          <button 
+            ref={menuButtonRef}
+            onClick={handleOpenMenu} 
+            className="rounded p-1.5 text-slate-500 opacity-0 transition-all hover:bg-slate-800 hover:text-slate-200 group-hover:opacity-100"
+          >
+            <MoreHorizontal size={18} />
+          </button>
         </div>
       </Component>
 
-      {/* ✅ Pass taskTags to the Modal to enable smart filtering */}
+      {/* ✅ Portal for Card Menu (Fixes Z-Index & Overflow Clipping) */}
+      {showMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={() => setShowMenu(false)} />
+          <div 
+            className="fixed z-[110] w-56 rounded-xl border border-slate-700 bg-slate-900 p-3 shadow-2xl"
+            style={{ top: menuPos.top, left: menuPos.left }}
+          >
+            <p className="mb-2 text-[10px] font-bold uppercase text-slate-500 px-1">Card Color</p>
+            <div className="grid grid-cols-5 gap-2 mb-3">
+              {Object.keys(CARD_THEMES).map(c => (
+                <button key={c} onClick={() => changeColor(c)} className={`h-7 w-7 rounded-full ${CARD_PICKER_STYLES[c]} hover:scale-110 hover:ring-2 ring-white/50 transition-all shadow-md`} title={c.charAt(0).toUpperCase() + c.slice(1)} />
+              ))}
+            </div>
+            <div className="h-px bg-slate-800 my-2" />
+            
+            <button onClick={() => { onEdit(); setShowMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors mb-1"><PenSquare size={14} /> Edit Details</button>
+            <button onClick={handleDuplicate} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors mb-1"><Copy size={14} /> Duplicate</button>
+            
+            <button onClick={() => onDelete(id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /> Delete Mandate</button>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* ✅ Portal for Tag Menu */}
+      {openTagMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={() => setOpenTagMenu(null)} />
+          <div 
+            className="fixed z-[110] grid grid-cols-6 gap-2 bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl w-64"
+            style={{ top: menuPos.top, left: menuPos.left }}
+          >
+            {Object.entries(TAG_THEMES).map(([k, t]) => (
+              <button key={k} onClick={() => handleTagColorChange(openTagMenu, k)} className={`w-6 h-6 rounded-full ${t.bg} ${t.border} border-2 hover:scale-110 hover:brightness-125 transition-all shadow-sm`} title={k.charAt(0).toUpperCase() + k.slice(1)} />
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+
       <ContributionModal 
         isOpen={showContribution} 
         onClose={() => setShowContribution(false)} 
