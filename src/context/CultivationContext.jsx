@@ -50,9 +50,17 @@ function getRealmIndexFromQi(qi) {
 
 function loadInitialState() {
   const defaultState = { 
-    qi: 0, spiritStones: 0, lastLoginDate: null, todayTotalMinutes: 0, 
-    enduranceMilestonesAwarded: [], knownTags: [], 
-    lateNightExpiry: null, previousDayState: null
+    qi: 0, 
+    spiritStones: 0, 
+    lastLoginDate: null, 
+    todayTotalMinutes: 0, 
+    enduranceMilestonesAwarded: [], 
+    knownTags: [], 
+    lateNightExpiry: null, 
+    previousDayState: null,
+    history: [], 
+    inventory: [], 
+    activeBuffs: {} 
   }
   if (typeof window === 'undefined') return defaultState
   try {
@@ -84,7 +92,7 @@ export function CultivationProvider({ children }) {
   useEffect(() => { window.localStorage.setItem(TAGS_COLORS_KEY, JSON.stringify(tagColors)) }, [tagColors])
   useEffect(() => { window.localStorage.setItem(WEEKLY_PLAN_KEY, JSON.stringify(weeklyTargets)) }, [weeklyTargets])
 
-  // ... (KEEP RESET LOGIC & HELPER FUNCTIONS AS IS) ...
+  // --- Date & Reset Logic ---
   useEffect(() => {
     const todayKey = getTodayKey()
     const lastLogin = state.lastLoginDate
@@ -92,7 +100,7 @@ export function CultivationProvider({ children }) {
     if (lastLogin && lastLogin !== todayKey) {
       const isLateNightActive = state.lateNightExpiry && new Date(state.lateNightExpiry) >= new Date(todayKey)
       if (!isLateNightActive) {
-        performReset(todayKey)
+        performReset(todayKey, lastLogin)
       }
     } else if (!lastLogin) {
       setState(prev => ({ ...prev, lastLoginDate: todayKey }))
@@ -103,46 +111,41 @@ export function CultivationProvider({ children }) {
   const currentRealm = REALMS[realmIndex]
   const nextRealm = REALMS[realmIndex + 1] || REALMS[REALMS.length - 1]
 
-  // ✅ Updated Reset Logic for Flexible Reincarnation
-  function performReset(dateKey) {
-    const snapshot = {
-      lastLoginDate: state.lastLoginDate,
-      todayTotalMinutes: state.todayTotalMinutes,
-      enduranceMilestonesAwarded: state.enduranceMilestonesAwarded,
-    }
-    
-    // Get current day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
-    const todayDayIndex = new Date().getDay()
-
-    setState(prev => ({ 
-      ...prev, 
-      lastLoginDate: dateKey, 
-      todayTotalMinutes: 0, 
-      enduranceMilestonesAwarded: [],
-      previousDayState: snapshot 
-    }))
-
-    setTasks(prevTasks => prevTasks.map(task => {
-      let shouldReset = false
-
-      // 1. Classic Daily
-      if (task.repeat === 'daily') {
-        shouldReset = true
-      } 
-      // 2. Custom Repeat (Flexible Reincarnation)
-      else if (task.repeat === 'custom' && task.repeatDays) {
-        // Reset only if today matches one of the selected days
-        if (task.repeatDays.includes(todayDayIndex)) {
-          shouldReset = true
-        }
+  function performReset(newDateKey, oldDateKey) {
+    setState(prev => {
+      const historyEntry = {
+        date: oldDateKey,
+        minutes: prev.todayTotalMinutes,
+        qiTotal: prev.qi, 
+        stones: prev.spiritStones 
       }
 
+      const snapshot = {
+        lastLoginDate: prev.lastLoginDate,
+        todayTotalMinutes: prev.todayTotalMinutes,
+        enduranceMilestonesAwarded: prev.enduranceMilestonesAwarded,
+      }
+      
+      return { 
+        ...prev, 
+        lastLoginDate: newDateKey, 
+        todayTotalMinutes: 0, 
+        enduranceMilestonesAwarded: [],
+        previousDayState: snapshot,
+        history: [...(prev.history || []), historyEntry] 
+      }
+    })
+
+    const todayDayIndex = new Date().getDay()
+    setTasks(prevTasks => prevTasks.map(task => {
+      let shouldReset = false
+      if (task.repeat === 'daily') shouldReset = true
+      else if (task.repeat === 'custom' && task.repeatDays && task.repeatDays.includes(todayDayIndex)) shouldReset = true
+
       if (shouldReset) {
-        // Also uncheck subtasks on reset if desired (optional logic, kept simple for now)
         const resetSubtasks = task.subtasks ? task.subtasks.map(st => ({ ...st, completed: false })) : []
         return { ...task, isCompleted: false, subtasks: resetSubtasks }
       }
-      
       return task
     }))
   }
@@ -156,7 +159,8 @@ export function CultivationProvider({ children }) {
       todayTotalMinutes: prev.todayTotalMinutes,
       enduranceMilestonesAwarded: prev.enduranceMilestonesAwarded,
       previousDayState: null, 
-      lateNightExpiry: getTodayKey() 
+      lateNightExpiry: getTodayKey(),
+      history: curr.history.slice(0, -1) 
     }))
   }
 
@@ -168,22 +172,27 @@ export function CultivationProvider({ children }) {
     setState(prev => ({ ...prev, lateNightExpiry: expiryKey }))
   }
 
-  function disableLateNight() {
-    setState(prev => ({ ...prev, lateNightExpiry: null }))
-  }
+  function disableLateNight() { setState(prev => ({ ...prev, lateNightExpiry: null })) }
 
   function forceStartNewDay() {
     const todayKey = getTodayKey()
-    performReset(todayKey)
+    performReset(todayKey, state.lastLoginDate || todayKey)
   }
 
   function gainQi(amount) {
     if (amount === 0) return
     setState(prev => {
-      const newQi = Math.max(0, prev.qi + amount)
+      const multiplier = 1 
+      const finalAmount = Math.floor(amount * multiplier)
+      const newQi = Math.max(0, prev.qi + finalAmount)
       const cappedQi = Math.min(newQi, REALMS[REALMS.length - 1].xp)
       return { ...prev, qi: cappedQi, lastLoginDate: getTodayKey() }
     })
+  }
+
+  function gainStones(amount) {
+     if (amount <= 0) return
+     setState(prev => ({ ...prev, spiritStones: (prev.spiritStones || 0) + amount }))
   }
 
   function completeTask(task) {
@@ -193,7 +202,8 @@ export function CultivationProvider({ children }) {
     gainQi(xp)
   }
 
-  function processDailyHarvest(minutesWorked, streaks) {
+  // ✅ Harvest Logic Updated: Now accepts calculated XP and Stones from the Modal
+  function processDailyHarvest(minutesWorked, streaks, calculatedXP, calculatedStones) {
     const todayKey = getTodayKey()
     setState(prev => {
       const isNewDay = prev.lastLoginDate !== todayKey
@@ -203,11 +213,11 @@ export function CultivationProvider({ children }) {
       const updatedTotalMinutes = baseTodayMinutes + minutesWorked
 
       if (updatedTotalMinutes > 1440) {
-        alert("Cultivator! One day only has 24 hours. Do not defy the laws of time.")
+        alert("Cultivator! One day only has 24 hours.")
         return prev 
       }
       
-      const enduranceBaseXP = Math.round((50 * minutesWorked) / 60)
+      // Milestones
       let milestoneXP = 0
       const newAwarded = [...baseAwarded]
       ENDURANCE_MILESTONES.forEach(m => {
@@ -217,18 +227,21 @@ export function CultivationProvider({ children }) {
         }
       })
 
+      // Streaks
       let streakXP = 0
       Object.entries(streaks).forEach(([duration, count]) => {
         const value = STREAK_VALUES[duration] || 0
         streakXP += (value * count)
       })
 
-      const totalHarvest = enduranceBaseXP + milestoneXP + streakXP
+      const totalHarvest = calculatedXP + milestoneXP + streakXP
       const newQi = Math.min(prev.qi + totalHarvest, REALMS[REALMS.length - 1].xp)
+      const newStones = (prev.spiritStones || 0) + calculatedStones
 
       return {
         ...prev,
         qi: newQi,
+        spiritStones: newStones,
         lastLoginDate: isLateNight ? prev.lastLoginDate : todayKey,
         todayTotalMinutes: updatedTotalMinutes,
         enduranceMilestonesAwarded: newAwarded
@@ -251,9 +264,9 @@ export function CultivationProvider({ children }) {
       color: 'default', 
       repeat: 'once',
       isTrivial: false,
-      notes: '', // ✅ New
-      subtasks: [], // ✅ New
-      repeatDays: [], // ✅ New for Custom Repeat
+      notes: '', 
+      subtasks: [], 
+      repeatDays: [], 
       ...task 
     }
     setTasks(prev => [newTask, ...prev])
@@ -266,35 +279,23 @@ export function CultivationProvider({ children }) {
     setTasks(prev => [newTask, ...prev])
   }
 
-  function updateTask(id, updates) {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
-  }
-
+  function updateTask(id, updates) { setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t)) }
   function reorderTasks(newOrderedTasks) { setTasks(newOrderedTasks) }
   function deleteTask(id) { setTasks(prev => prev.filter(t => t.id !== id)) }
   function toggleTaskCompletion(id) { setTasks(prev => prev.map(t => t.id === id ? { ...t, isCompleted: !t.isCompleted } : t)) }
   function setTagColor(tagName, colorKey) { setTagColors(prev => ({ ...prev, [tagName]: colorKey })) }
 
-  // ✅ Add Weekly Target
   function addWeeklyTarget(targetData) {
     const data = typeof targetData === 'string' ? { title: targetData } : targetData
-    
     if (data.tags?.length > 0) {
       setState(prev => {
         const newTags = data.tags.filter(t => !prev.knownTags.includes(t))
         return newTags.length ? { ...prev, knownTags: [...prev.knownTags, ...newTags] } : prev
       })
     }
-
     const newTarget = {
-      id: crypto.randomUUID(),
-      title: data.title || 'Untitled Oath',
-      difficulty: data.difficulty || 'med',
-      tags: data.tags || [],
-      progress: 0, 
-      status: 'active',
-      createdAt: new Date().toISOString(),
-      ...data
+      id: crypto.randomUUID(), title: data.title || 'Untitled Oath', difficulty: data.difficulty || 'med',
+      tags: data.tags || [], progress: 0, status: 'active', createdAt: new Date().toISOString(), ...data
     }
     setWeeklyTargets(prev => [newTarget, ...prev])
   }
@@ -302,14 +303,7 @@ export function CultivationProvider({ children }) {
   function duplicateWeeklyTarget(id) {
     const original = weeklyTargets.find(t => t.id === id)
     if (!original) return
-    
-    const newTarget = {
-      ...original,
-      id: crypto.randomUUID(),
-      title: `${original.title} (Copy)`,
-      progress: 0,
-      createdAt: new Date().toISOString()
-    }
+    const newTarget = { ...original, id: crypto.randomUUID(), title: `${original.title} (Copy)`, progress: 0, createdAt: new Date().toISOString() }
     setWeeklyTargets(prev => [newTarget, ...prev])
   }
 
@@ -322,42 +316,34 @@ export function CultivationProvider({ children }) {
     }
     setWeeklyTargets(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
   }
-
-  function deleteWeeklyTarget(id) {
-    setWeeklyTargets(prev => prev.filter(t => t.id !== id))
-  }
-
+  function deleteWeeklyTarget(id) { setWeeklyTargets(prev => prev.filter(t => t.id !== id)) }
   function contributeToWeeklyTarget(id, amount) {
     setWeeklyTargets(prev => prev.map(t => {
       if (t.id === id) {
         const numeric = Number.isNaN(Number(amount)) ? 0 : Number(amount)
         const newProgress = Math.min(100, Math.max(0, numeric))
-        return {
-          ...t,
-          progress: newProgress,
-          status: newProgress >= 100 ? 'completed' : 'active',
+        if (newProgress >= 100 && t.progress < 100) {
+             gainStones(50) 
         }
+        return { ...t, progress: newProgress, status: newProgress >= 100 ? 'completed' : 'active' }
       }
       return t
     }))
   }
+  function reorderWeeklyTargets(newOrder) { setWeeklyTargets(newOrder) }
 
-  function reorderWeeklyTargets(newOrder) {
-    setWeeklyTargets(newOrder)
-  }
-
-  function hardReset() {
-    localStorage.clear()
-    window.location.reload()
-  }
+  function hardReset() { localStorage.clear(); window.location.reload() }
 
   return (
     <CultivationContext.Provider value={{
       state, 
-      qi: state.qi, spiritStones: state.spiritStones, knownTags: state.knownTags, lateNightExpiry: state.lateNightExpiry,
+      qi: state.qi, 
+      spiritStones: state.spiritStones, 
+      knownTags: state.knownTags, 
+      lateNightExpiry: state.lateNightExpiry,
       tasks, currentRealm, nextRealm, realmIndex, realms: REALMS, tagColors,
       weeklyTargets,
-      gainQi, completeTask, processDailyHarvest, 
+      gainQi, gainStones, completeTask, processDailyHarvest, 
       addTask, updateTask, deleteTask, toggleTaskCompletion, reorderTasks, setTagColor, duplicateTask,
       addWeeklyTarget, updateWeeklyTarget, deleteWeeklyTarget, duplicateWeeklyTarget, contributeToWeeklyTarget, 
       reorderWeeklyTargets,
