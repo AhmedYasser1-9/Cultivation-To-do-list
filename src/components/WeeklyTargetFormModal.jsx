@@ -64,7 +64,13 @@ export default function WeeklyTargetFormModal({ isOpen, onClose, initialData = n
 
   const addTag = (tagText) => {
     const trimmed = tagText.trim()
-    if (trimmed && !tags.includes(trimmed)) { setTags([...tags, trimmed]); setCurrentTagInput('') }
+    if (!trimmed) return
+    // Only allow tags that already exist in Personal Cultivation
+    if (!knownTags.includes(trimmed)) return
+    if (!tags.includes(trimmed)) {
+      setTags([...tags, trimmed])
+    }
+    setCurrentTagInput('')
   }
 
   const removeTag = (tagToRemove) => { setTags(tags.filter((t) => t !== tagToRemove)) }
@@ -73,7 +79,10 @@ export default function WeeklyTargetFormModal({ isOpen, onClose, initialData = n
     e.preventDefault()
     if (!title.trim()) return
     const finalTags = [...tags]
-    if (currentTagInput.trim() && !finalTags.includes(currentTagInput.trim())) finalTags.push(currentTagInput.trim())
+    const pending = currentTagInput.trim()
+    if (pending && knownTags.includes(pending) && !finalTags.includes(pending)) {
+      finalTags.push(pending)
+    }
     
     // ✅ Use generic onSubmit to handle both Add and Edit
     onSubmit({ 

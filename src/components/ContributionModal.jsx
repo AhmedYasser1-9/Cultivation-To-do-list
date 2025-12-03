@@ -1,14 +1,30 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Target, X, Zap } from 'lucide-react'
+import { Target, X, Zap, Filter } from 'lucide-react'
 import { useCultivation } from '../context/CultivationContext.jsx'
 
-export default function ContributionModal({ isOpen, onClose, taskTitle }) {
+export default function ContributionModal({ isOpen, onClose, taskTitle, taskTags = [] }) {
   const { weeklyTargets, contributeToWeeklyTarget } = useCultivation()
   const [selectedTargetId, setSelectedTargetId] = useState(null)
-  const [contributionAmount, setContributionAmount] = useState('') // ✅ Changed to string for input
+  const [contributionAmount, setContributionAmount] = useState('')
 
-  const activeTargets = weeklyTargets.filter(t => t.progress < 100)
+  // ✅ Smart Filtering Logic
+  // Show targets that are NOT complete AND (have matching tags OR source has no tags)
+  const activeTargets = weeklyTargets.filter(t => {
+    // 1. Hide 100% completed targets to keep list clean
+    if (t.progress >= 100) return false
+
+    // 2. Tag Intersection Logic
+    if (taskTags.length > 0) {
+      // If the source task has tags, only show weekly targets that share AT LEAST ONE tag
+      // If the weekly target has no tags, it won't show (unless you want it to, but usually strict is better)
+      const hasMatchingTag = t.tags && t.tags.some(tag => taskTags.includes(tag))
+      return hasMatchingTag
+    }
+    
+    // 3. If source task has NO tags, show ALL active targets (Fallback)
+    return true
+  })
 
   const handleConfirm = (e) => {
     e.preventDefault()
@@ -45,7 +61,15 @@ export default function ContributionModal({ isOpen, onClose, taskTitle }) {
               
               {/* Select Target */}
               <div className="space-y-3">
-                <label className="text-xs font-bold text-slate-500 uppercase">Select Weekly Target</label>
+                <div className="flex justify-between items-center">
+                   <label className="text-xs font-bold text-slate-500 uppercase">Select Weekly Target</label>
+                   {taskTags.length > 0 && (
+                     <span className="text-[10px] text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                       <Filter size={10} /> Filtered by Tags
+                     </span>
+                   )}
+                </div>
+
                 <div className="flex flex-col gap-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
                   {activeTargets.length > 0 ? (
                     activeTargets.map(t => (
@@ -60,20 +84,22 @@ export default function ContributionModal({ isOpen, onClose, taskTitle }) {
                         }`}
                       >
                         <div className="flex justify-between items-center">
-                          <span>{t.title}</span>
-                          <span className="opacity-50 font-mono">({t.progress}%)</span>
+                          <span className="truncate pr-2">{t.title}</span>
+                          <span className="opacity-50 font-mono whitespace-nowrap">({t.progress}%)</span>
                         </div>
                       </button>
                     ))
                   ) : (
                     <div className="text-center p-4 border border-dashed border-slate-800 rounded-xl text-xs text-slate-500">
-                      No active weekly targets found.
+                      {taskTags.length > 0 
+                        ? "No weekly targets match this task's tags." 
+                        : "No active weekly targets found."}
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* ✅ Manual Input Area */}
+              {/* Manual Input Area */}
               {selectedTargetId && (
                 <div className="space-y-3">
                   <label className="text-xs font-bold text-slate-500 uppercase">Contribution (%)</label>
