@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence, Reorder } from 'framer-motion'
-import { Plus, User, CheckCircle2, ListTodo, Sun, Search, Filter, X, Tag, Trash2, Zap, ArrowRight } from 'lucide-react'
+import { Plus, User, CheckCircle2, ListTodo, Sun, Search, Filter, X, Zap, ArrowRight } from 'lucide-react'
 import { useCultivation, DIFFICULTY_TIERS } from '../context/CultivationContext.jsx'
 import MissionCard from './MissionCard.jsx'
 import TaskFormModal from './TaskFormModal.jsx'
 import DailyHarvestModal from './DailyHarvestModal.jsx'
 import ConfirmModal from './ConfirmModal.jsx'
+import Toast from './Toast.jsx'
 
 const TAG_COLORS = [
   'bg-red-500/20 text-red-200 border-red-500/30',
@@ -34,15 +35,13 @@ export default function MissionBoard() {
   const [editingTask, setEditingTask] = useState(null)
   const [isHarvestOpen, setIsHarvestOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('todo')
-  
   const [searchQuery, setSearchQuery] = useState('')
   const [filterDifficulty, setFilterDifficulty] = useState('All')
   const [filterTag, setFilterTag] = useState('All')
   const [showFilters, setShowFilters] = useState(false)
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDanger: false })
-
-  // ✅ Quick Add State
   const [quickAddTitle, setQuickAddTitle] = useState('')
+  const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' })
 
   const availableTags = useMemo(() => {
     const tags = new Set(tasks.flatMap(t => t.tags || []))
@@ -51,82 +50,113 @@ export default function MissionBoard() {
 
   const filteredTasks = tasks.filter(t => {
     const matchesTab = activeTab === 'todo' ? !t.isCompleted : t.isCompleted
+    if (!matchesTab) return false
     const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesDifficulty = filterDifficulty === 'All' || t.difficulty.toLowerCase() === filterDifficulty.toLowerCase()
     const matchesTag = filterTag === 'All' || (t.tags && t.tags.includes(filterTag))
-    return matchesTab && matchesSearch && matchesDifficulty && matchesTag
+    return matchesSearch && matchesDifficulty && matchesTag
   })
 
-  const todoTasks = filteredTasks.filter(t => !t.isCompleted)
-  const completedTasks = filteredTasks.filter(t => t.isCompleted)
+  // List Logic
+  const displayTasks = activeTab === 'todo' ? filteredTasks.filter(t => !t.isCompleted) : filteredTasks.filter(t => t.isCompleted)
 
-  const handleReorder = (newOrder) => {
-    if (searchQuery === '' && filterDifficulty === 'All' && filterTag === 'All') {
-      const otherTasks = tasks.filter(t => t.isCompleted)
-      reorderTasks([...newOrder, ...otherTasks])
-    }
+  // ✅ CRITICAL FIX: Save Future Order
+  const handleReorder = (newOrderedSubset) => {
+    const subsetIds = new Set(newOrderedSubset.map(t => t.id))
+    const otherTasks = tasks.filter(t => !subsetIds.has(t.id))
+    // Put reordered tasks AT THE TOP of the main list
+    reorderTasks([...newOrderedSubset, ...otherTasks])
   }
 
   const handleToggle = (id) => {
     const task = tasks.find((t) => t.id === id)
     if (!task) return
-    if (!task.isCompleted) {
-      completeTask(task)
-    } else {
-      if (!task.isTrivial) {
-        const key = String(task.difficulty).toLowerCase()
-        const amount = DIFFICULTY_TIERS[key]?.xp || 10
-        gainQi(-amount)
-      }
-    }
+    if (!task.isCompleted) { completeTask(task) } 
+    else { if (!task.isTrivial) { const key = String(task.difficulty).toLowerCase(); const amount = DIFFICULTY_TIERS[key]?.xp || 10; gainQi(-amount) } }
     toggleTaskCompletion(id)
   }
 
-  const handleFormSubmit = (data) => {
-    if (editingTask) { updateTask(editingTask.id, data) } else { addTask(data) }
-    setEditingTask(null)
-  }
-  const openEditModal = (task) => { setEditingTask(task); setIsFormOpen(true) }
-
-  const handleDeleteSafe = (id) => {
-    setConfirmConfig({
-      isOpen: true, title: "Destroy Mandate", message: "Are you sure you want to burn this scroll?", confirmText: "Destroy", isDanger: true,
-      onConfirm: () => deleteTask(id)
+  // ✅ دالة Foresight المصححة: تحافظ على خاصية التكرار
+  const handleForesightAction = () => {
+    const tomorrowDayIndex = (new Date().getDay() + 1) % 7
+    
+    // البحث عن المهام المكتملة فقط (Done) التي هي daily أو custom بتاريخ الغد
+    const completedTasks = tasks.filter(t => t.isCompleted)
+    const tasksToAdd = completedTasks.filter(t => {
+      const isDaily = t.repeat === 'daily'
+      const isCustomTomorrow = t.repeat === 'custom' && (t.repeatDays || []).includes(tomorrowDayIndex)
+      return isDaily || isCustomTomorrow
     })
+
+    if (tasksToAdd.length === 0) {
+      setToast({ isOpen: true, message: '🔮 لا توجد مهام مكتملة مخططة للغد', type: 'info' })
+      return
+    }
+
+    // إنشاء نسخ جديدة من المهام وحذف المهام الأصلية من Done
+    tasksToAdd.forEach(originalTask => {
+      const newTask = {
+        ...originalTask,
+        id: crypto.randomUUID(),
+        isCompleted: false,
+        // ✅ FIX: نحتفظ بنوع التكرار الأصلي لكي تستمر الدورة ولا تموت المهمة
+        repeat: originalTask.repeat, 
+        repeatDays: originalTask.repeatDays
+      }
+      addTask(newTask)
+      // حذف المهمة الأصلية من Done لتجنب التكرار
+      deleteTask(originalTask.id)
+    })
+
+    setToast({ isOpen: true, message: `✨ تم استحضار ${tasksToAdd.length} مهمة للغد!`, type: 'success' })
   }
 
-  // ✅ Quick Add Handler
   const handleQuickAdd = (e) => {
     e.preventDefault()
     if (!quickAddTitle.trim()) return
     addTask({
-      title: quickAddTitle.trim(),
-      difficulty: 'low', // Default
-      repeat: 'once', // Default
-      isTrivial: false,
-      tags: [],
-      notes: '',
-      subtasks: []
+      title: quickAddTitle.trim(), difficulty: 'low',
+      repeat: 'once', repeatDays: [],
+      isTrivial: false, tags: [], notes: '', subtasks: []
     })
     setQuickAddTitle('')
   }
-
-  const confirmHarvest = (totalMinutes, streaks) => { processDailyHarvest(totalMinutes, streaks); setIsHarvestOpen(false) }
+  
+  const handleFormSubmit = (data) => { if (editingTask) { updateTask(editingTask.id, data) } else { addTask(data) }; setEditingTask(null) }
+  const handleDeleteSafe = (id) => { setConfirmConfig({ isOpen: true, title: "Destroy Mandate", message: "Are you sure?", confirmText: "Destroy", isDanger: true, onConfirm: () => deleteTask(id) }) }
+  const confirmHarvest = (minutes, streaks, xp, stones) => { processDailyHarvest(minutes, streaks, xp, stones); setIsHarvestOpen(false) } 
   const difficultyOptions = Object.keys(DIFFICULTY_TIERS)
   const toggleDifficultyFilter = (d) => { setFilterDifficulty(prev => prev === d ? 'All' : d) }
   const toggleTagFilter = (t) => { setFilterTag(prev => prev === t ? 'All' : t) }
+  const isDragEnabled = searchQuery === '' && filterDifficulty === 'All' && filterTag === 'All'
 
   return (
     <>
-      <section className="relative rounded-3xl border border-amber-900/30 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-md">
+      <section className="relative rounded-3xl border border-amber-900/30 bg-slate-900/80 shadow-2xl p-6 backdrop-blur-md">
         
+        {/* Header */}
         <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20"><User size={20} /></div>
-            <div><h2 className="text-lg font-bold text-emerald-100">Personal Cultivation</h2><p className="text-xs text-slate-400">Drag to prioritize your path</p></div>
+             <div className="flex h-10 w-10 items-center justify-center rounded-xl border bg-amber-500/10 text-amber-400 border-amber-500/20">
+              <User size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-emerald-100">
+                Personal Cultivation
+              </h2>
+              <p className="text-xs text-slate-400">Drag to prioritize your path</p>
+            </div>
           </div>
-
           <div className="flex flex-wrap items-center gap-2">
+            <motion.button 
+              whileHover={{ scale: 1.05 }} 
+              onClick={handleForesightAction}
+              className="flex items-center gap-2 rounded-xl border border-indigo-500/50 bg-indigo-600/20 px-3 py-2 text-xs font-bold uppercase text-indigo-300 hover:bg-indigo-600 hover:text-white transition-all shadow-lg shadow-indigo-500/20"
+            >
+              <Zap size={16} />
+              <span className="hidden sm:inline">Foresight</span>
+            </motion.button>
+            <div className="w-px h-6 bg-slate-800 mx-1"></div>
             <motion.button whileHover={{ scale: 1.05 }} onClick={() => setIsHarvestOpen(true)} className="flex items-center gap-2 rounded-xl border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs font-bold uppercase text-amber-300 hover:bg-amber-500 hover:text-slate-900 transition-colors mr-2"><Sun size={16} /> <span className="hidden sm:inline">Harvest</span></motion.button>
             <div className="flex rounded-lg bg-slate-950/50 p-1 border border-slate-800">
               <button onClick={() => setActiveTab('todo')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'todo' ? 'bg-slate-800 text-emerald-300 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}><ListTodo size={14} /> To Do</button>
@@ -136,7 +166,7 @@ export default function MissionBoard() {
           </div>
         </div>
 
-        {/* Filters Toolbar */}
+        {/* Filters */}
         <div className="mb-4 space-y-3">
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -148,82 +178,42 @@ export default function MissionBoard() {
               <Filter size={16} />
             </button>
           </div>
-          <AnimatePresence>
-            {showFilters && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                <div className="flex flex-col gap-4 p-4 rounded-xl bg-slate-950/30 border border-slate-800/50 mt-2">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center"><label className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Difficulty Grade</label>{(filterDifficulty !== 'All') && (<button onClick={() => setFilterDifficulty('All')} className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1"><X size={10}/> Clear</button>)}</div>
-                    <div className="flex flex-wrap gap-2">
-                      {difficultyOptions.map(d => (<button key={d} onClick={() => toggleDifficultyFilter(d)} className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase border transition-all ${filterDifficulty === d ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.2)]' : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300'}`}>{DIFFICULTY_TIERS[d]?.label || d}</button>))}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center"><label className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Filter by Tag</label>{(filterTag !== 'All') && (<button onClick={() => setFilterTag('All')} className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1"><X size={10}/> Clear</button>)}</div>
-                    <div className="flex flex-wrap gap-2">
-                      {availableTags.filter(t => t !== 'All').map(tag => (<button key={tag} onClick={() => toggleTagFilter(tag)} className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border transition-all ${filterTag === tag ? 'ring-2 ring-offset-1 ring-offset-slate-900 ring-emerald-500 opacity-100 scale-105' : 'opacity-60 hover:opacity-100 hover:scale-105 grayscale hover:grayscale-0'} ${getTagColor(tag)}`}>{tag}</button>))}
-                    </div>
-                  </div>
-                  {(filterDifficulty !== 'All' || filterTag !== 'All') && (<div className="pt-3 border-t border-slate-800 flex justify-end"><button onClick={() => { setFilterDifficulty('All'); setFilterTag('All'); }} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold hover:bg-red-500/20 hover:text-red-300 transition-all"><Trash2 size={14} /> Clear Active Filters</button></div>)}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
         {/* Task List */}
         <div className="flex flex-col gap-2 min-h-[200px] mb-4">
-          {activeTab === 'todo' ? (
-            <Reorder.Group axis="y" values={todoTasks} onReorder={handleReorder} className="flex flex-col gap-2">
-              {todoTasks.length > 0 ? (
-                todoTasks.map((task) => (
-                  <MissionCard key={task.id} task={task} onToggle={handleToggle} onDelete={handleDeleteSafe} onUpdate={updateTask} onEdit={() => openEditModal(task)} enableDrag={searchQuery === '' && filterDifficulty === 'All' && filterTag === 'All'} />
-                ))
-              ) : (
-                <div className="py-12 text-center border-2 border-dashed border-slate-800/50 rounded-2xl"><p className="text-sm text-slate-500">{(searchQuery || filterDifficulty !== 'All' || filterTag !== 'All') ? 'No mandates match your filters.' : 'No mandates pending.'}</p></div>
-              )}
-            </Reorder.Group>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {completedTasks.length > 0 ? (
-                completedTasks.map((task) => (
-                  <MissionCard key={task.id} task={task} onToggle={handleToggle} onDelete={handleDeleteSafe} onUpdate={updateTask} onEdit={() => openEditModal(task)} enableDrag={false} />
-                ))
-              ) : (
-                <div className="py-12 text-center border-2 border-dashed border-slate-800/50 rounded-2xl"><p className="text-sm text-slate-500">No past glories yet.</p></div>
-              )}
-            </div>
-          )}
+          <Reorder.Group axis="y" values={displayTasks} onReorder={handleReorder} className="flex flex-col gap-2">
+            {displayTasks.length > 0 ? (
+              displayTasks.map((task) => (
+                <MissionCard 
+                  key={task.id} 
+                  task={task}
+                  onToggle={handleToggle} onDelete={handleDeleteSafe} onUpdate={(id, d) => updateTask(id, d)} onEdit={() => { setEditingTask(task); setIsFormOpen(true); }} 
+                  enableDrag={isDragEnabled} 
+                />
+              ))
+            ) : (
+              <div className="py-12 text-center border-2 border-dashed border-slate-800/50 rounded-2xl">
+                <p className="text-sm text-slate-500">
+                  No mandates pending.
+                </p>
+              </div>
+            )}
+          </Reorder.Group>
         </div>
 
-        {/* ✅ Quick Flash Add Bar */}
-        {activeTab === 'todo' && (
-          <form onSubmit={handleQuickAdd} className="relative group">
-            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-              <Zap size={16} className="text-slate-500 group-focus-within:text-amber-400 transition-colors" />
-            </div>
-            <input 
-              type="text" 
-              value={quickAddTitle}
-              onChange={(e) => setQuickAddTitle(e.target.value)}
-              placeholder="Quick Flash: Type mandate & press Enter..." 
-              className="w-full rounded-xl border border-slate-700 bg-slate-950/80 pl-12 pr-12 py-3 text-sm text-slate-200 outline-none focus:border-amber-500/50 focus:bg-slate-900 transition-all placeholder:text-slate-600 shadow-inner"
-            />
-            <button 
-              type="submit"
-              disabled={!quickAddTitle.trim()}
-              className="absolute inset-y-1 right-1 p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-emerald-600 hover:text-white disabled:opacity-0 disabled:scale-90 transition-all"
-            >
-              <ArrowRight size={16} />
-            </button>
-          </form>
-        )}
+        {/* Quick Add */}
+        <form onSubmit={handleQuickAdd} className="relative group">
+          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none"><Zap size={16} className="text-slate-500" /></div>
+          <input type="text" value={quickAddTitle} onChange={(e) => setQuickAddTitle(e.target.value)} placeholder="Quick Flash: Type mandate..." className="w-full rounded-xl border border-slate-700 bg-slate-950/80 focus:border-amber-500/50 pl-12 pr-12 py-3 text-sm text-slate-200 outline-none transition-all shadow-inner" />
+          <button type="submit" disabled={!quickAddTitle.trim()} className="absolute inset-y-1 right-1 p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-emerald-600 hover:text-white disabled:opacity-0 transition-all"><ArrowRight size={16} /></button>
+        </form>
 
       </section>
-
       <TaskFormModal isOpen={isFormOpen} onClose={() => { setIsFormOpen(false); setEditingTask(null); }} onSubmit={handleFormSubmit} initialData={editingTask} />
       <DailyHarvestModal isOpen={isHarvestOpen} onClose={() => setIsHarvestOpen(false)} onConfirm={confirmHarvest} />
       <ConfirmModal isOpen={confirmConfig.isOpen} onClose={() => setConfirmConfig({ ...confirmConfig, isOpen: false })} onConfirm={confirmConfig.onConfirm} title={confirmConfig.title} message={confirmConfig.message} confirmText={confirmConfig.confirmText} isDanger={confirmConfig.isDanger} />
+      <Toast isOpen={toast.isOpen} onClose={() => setToast({ ...toast, isOpen: false })} message={toast.message} type={toast.type} />
     </>
   )
 }
