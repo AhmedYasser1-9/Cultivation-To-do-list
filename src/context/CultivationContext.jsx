@@ -1,11 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo } from 'react'
+import { supabase } from '../supabaseClient'
 
-const LOCAL_STORAGE_KEY = 'cultivationState'
-const TASKS_STORAGE_KEY = 'cultivationTasks'
-const TAGS_COLORS_KEY = 'cultivationTagColors'
-const WEEKLY_PLAN_KEY = 'cultivationWeeklyPlan'
-
-// ... (KEEP REALMS, DIFFICULTY_TIERS, STREAK_VALUES, ENDURANCE_MILESTONES AS IS) ...
+// --- CONSTANTS ---
 const REALMS = [
   { name: 'Condensing Pulse', xp: 0 }, { name: 'Houtian', xp: 200 }, { name: 'Xiantian', xp: 500 },
   { name: 'Revolving Core', xp: 900 }, { name: 'Life Destruction', xp: 1400 }, { name: 'Royal Sea', xp: 2000 },
@@ -43,313 +39,420 @@ const ENDURANCE_MILESTONES = [
   { minutes: 600, xp: 1800 }, { minutes: 750, xp: 2500 }, { minutes: 900, xp: 3000 },
 ]
 
-function getTodayKey() { return new Date().toISOString().slice(0, 10) }
-function getRealmIndexFromQi(qi) {
-  let index = 0; for (let i = 0; i < REALMS.length; i++) { if (qi >= REALMS[i].xp) index = i; else break } return index
-}
+const getTodayKey = () => new Date().toISOString().slice(0, 10)
 
-function loadInitialState() {
-  const defaultState = { 
-    qi: 0, 
-    spiritStones: 0, 
-    lastLoginDate: null, 
-    todayTotalMinutes: 0, 
-    enduranceMilestonesAwarded: [], 
-    knownTags: [], 
-    lateNightExpiry: null, 
-    previousDayState: null,
-    history: [], 
-    inventory: [], 
-    activeBuffs: {} 
+// --- MAPPERS ---
+const mapTaskFromDB = (t) => {
+  if (!t) return null
+  return {
+    ...t,
+    repeat: t.repeat_type || 'once',      
+    repeatDays: t.repeat_days || [],  
+    isCompleted: t.is_completed || false,
+    isTrivial: t.is_trivial || false,    
+    tags: t.tags || [],
+    subtasks: t.subtasks || []
   }
-  if (typeof window === 'undefined') return defaultState
-  try {
-    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
-    return raw ? { ...defaultState, ...JSON.parse(raw) } : defaultState
-  } catch { return defaultState }
 }
 
-function loadInitialTasks() {
-  try { const raw = window.localStorage.getItem(TASKS_STORAGE_KEY); return raw ? JSON.parse(raw) : [] } catch { return [] }
-}
-function loadTagColors() {
-  try { const raw = window.localStorage.getItem(TAGS_COLORS_KEY); return raw ? JSON.parse(raw) : {} } catch { return {} }
-}
-function loadWeeklyPlan() {
-  try { const raw = window.localStorage.getItem(WEEKLY_PLAN_KEY); return raw ? JSON.parse(raw) : [] } catch { return [] }
-}
+const mapTaskToDB = (t, userId) => ({
+  user_id: userId,
+  title: t.title,
+  difficulty: t.difficulty,
+  is_completed: t.isCompleted,
+  is_trivial: t.isTrivial,
+  tags: t.tags || [],
+  color: t.color || 'default',
+  repeat_type: t.repeat,      
+  repeat_days: t.repeatDays || [],  
+  notes: t.notes || '',
+  subtasks: t.subtasks || [],
+  order_index: t.order_index || 0
+})
 
 const CultivationContext = createContext(null)
 
 export function CultivationProvider({ children }) {
-  const [state, setState] = useState(() => loadInitialState())
-  const [tasks, setTasks] = useState(() => loadInitialTasks())
-  const [tagColors, setTagColors] = useState(() => loadTagColors())
-  const [weeklyTargets, setWeeklyTargets] = useState(() => loadWeeklyPlan())
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+  
+  const [profile, setProfile] = useState(null)
+  const [tasks, setTasks] = useState([])
+  const [weeklyTargets, setWeeklyTargets] = useState([])
+  const [tagColors, setTagColors] = useState({})
 
-  useEffect(() => { window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state)) }, [state])
-  useEffect(() => { window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks)) }, [tasks])
-  useEffect(() => { window.localStorage.setItem(TAGS_COLORS_KEY, JSON.stringify(tagColors)) }, [tagColors])
-  useEffect(() => { window.localStorage.setItem(WEEKLY_PLAN_KEY, JSON.stringify(weeklyTargets)) }, [weeklyTargets])
-
-  // --- Date & Reset Logic ---
+  // 1. Initial Load (Cache + Auth) - Optimized for Instant Display
   useEffect(() => {
-    const todayKey = getTodayKey()
-    const lastLogin = state.lastLoginDate
-
-    if (lastLogin && lastLogin !== todayKey) {
-      const isLateNightActive = state.lateNightExpiry && new Date(state.lateNightExpiry) >= new Date(todayKey)
-      if (!isLateNightActive) {
-        performReset(todayKey, lastLogin)
+    // A. Load from Cache Immediately (The Ancestral Memory)
+    const loadCache = () => {
+      try {
+        const cachedProfile = localStorage.getItem('cultivation_profile')
+        const cachedTasks = localStorage.getItem('cultivation_tasks')
+        const cachedTargets = localStorage.getItem('cultivation_targets')
+        const lastSync = localStorage.getItem('cultivation_last_sync')
+        
+        if (cachedProfile) setProfile(JSON.parse(cachedProfile))
+        if (cachedTasks) setTasks(JSON.parse(cachedTasks))
+        if (cachedTargets) setWeeklyTargets(JSON.parse(cachedTargets))
+        
+        // ✅ Always show UI immediately if we have cache (no white screen!)
+        if (cachedProfile) {
+          setLoading(false)
+        }
+        
+        return lastSync ? parseInt(lastSync) : 0
+      } catch (e) {
+        console.warn("Cache corrupted, starting fresh.")
+        return 0
       }
-    } else if (!lastLogin) {
-      setState(prev => ({ ...prev, lastLoginDate: todayKey }))
     }
-  }, [state.lastLoginDate, state.lateNightExpiry])
+    const lastSyncTime = loadCache()
 
-  const realmIndex = useMemo(() => getRealmIndexFromQi(state.qi), [state.qi])
-  const currentRealm = REALMS[realmIndex]
+    // B. Connect to Supabase (The Divine Link) - Background Sync Only
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      if (session) {
+        // ✅ Only sync if cache is old (> 30 seconds) or doesn't exist
+        const now = Date.now()
+        const syncInterval = 30000 // 30 seconds
+        if (!lastSyncTime || (now - lastSyncTime) > syncInterval) {
+          fetchData(session.user.id, session.user.email, true) // Background sync
+        }
+      } else {
+        setLoading(false)
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      if (session) {
+        // ✅ Only sync if needed (background, no loading screen)
+        const now = Date.now()
+        const lastSync = parseInt(localStorage.getItem('cultivation_last_sync') || '0')
+        const syncInterval = 30000
+        if (!lastSync || (now - lastSync) > syncInterval) {
+          fetchData(session.user.id, session.user.email, true)
+        }
+      } else {
+        setProfile(null); setTasks([]); setWeeklyTargets([]); setLoading(false)
+        // Clear cache on logout
+        localStorage.removeItem('cultivation_profile')
+        localStorage.removeItem('cultivation_tasks')
+        localStorage.removeItem('cultivation_targets')
+        localStorage.removeItem('cultivation_last_sync')
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // 2. Sync State to Cache (Auto-Save to Scroll) - Instant Updates
+  useEffect(() => { 
+    if(profile) {
+      localStorage.setItem('cultivation_profile', JSON.stringify(profile))
+      // ✅ Update sync timestamp when we modify data locally
+      localStorage.setItem('cultivation_last_sync', Date.now().toString())
+    }
+  }, [profile])
+  
+  useEffect(() => { 
+    if(tasks.length > 0) {
+      localStorage.setItem('cultivation_tasks', JSON.stringify(tasks))
+      localStorage.setItem('cultivation_last_sync', Date.now().toString())
+    }
+  }, [tasks])
+  
+  useEffect(() => { 
+    if(weeklyTargets.length > 0) {
+      localStorage.setItem('cultivation_targets', JSON.stringify(weeklyTargets))
+      localStorage.setItem('cultivation_last_sync', Date.now().toString())
+    }
+  }, [weeklyTargets])
+
+
+  // 3. Fetch Data (Optimized with Background Sync)
+  async function fetchData(userId, userEmail, isBackgroundSync = false) {
+    try {
+      // ✅ Only show loading if NO cache exists (first time load)
+      // If background sync, never show loading screen
+      if (!isBackgroundSync && !profile) {
+        setLoading(true)
+      }
+      
+      // Profile
+      let { data: userProfile, error: profileError } = await supabase
+        .from('profiles').select('*').eq('id', userId).single()
+      
+      if (profileError && profileError.code === 'PGRST116') {
+        const { data: newProfile } = await supabase
+          .from('profiles')
+          .insert([{ id: userId, username: userEmail?.split('@')[0] || 'Cultivator', last_login_date: getTodayKey() }])
+          .select().single()
+        userProfile = newProfile
+      }
+
+      // Reset Logic
+      const today = getTodayKey()
+      if (userProfile && userProfile.last_login_date !== today) {
+        const lateNightExpiry = userProfile.late_night_expiry
+        const isLateNightActive = lateNightExpiry && new Date(lateNightExpiry) >= new Date(today)
+
+        if (!isLateNightActive) {
+          const previousState = {
+            today_total_minutes: userProfile.today_total_minutes,
+            endurance_milestones: userProfile.endurance_milestones,
+            last_login_date: userProfile.last_login_date
+          }
+          userProfile.today_total_minutes = 0
+          userProfile.endurance_milestones = []
+          userProfile.last_login_date = today
+          userProfile.previous_day_state = previousState
+
+          await supabase.from('profiles').update({
+            today_total_minutes: 0,
+            endurance_milestones: [],
+            last_login_date: today,
+            previous_day_state: previousState
+          }).eq('id', userId)
+        }
+      }
+
+      setProfile(userProfile)
+      setTagColors(userProfile?.tag_colors || {})
+
+      // Tasks
+      const { data: tasksData } = await supabase
+        .from('tasks').select('*').eq('user_id', userId).order('order_index', { ascending: true })
+      if (tasksData) setTasks(tasksData.map(mapTaskFromDB).filter(Boolean))
+
+      // Weekly Targets
+      const { data: targetsData } = await supabase
+        .from('weekly_targets').select('*').eq('user_id', userId).order('order_index', { ascending: true })
+      setWeeklyTargets(targetsData || [])
+
+      // ✅ Update sync timestamp
+      localStorage.setItem('cultivation_last_sync', Date.now().toString())
+
+    } catch (error) {
+      console.error("Error communing with the Dao:", error)
+      // ✅ Don't break the UI if sync fails - keep using cache
+    } finally {
+      if (!isBackgroundSync) {
+        setLoading(false)
+      }
+    }
+  }
+
+  // --- Derived State ---
+  const qi = profile?.qi || 0
+  const spiritStones = profile?.spirit_stones || 0
+  const knownTags = profile?.known_tags || []
+  const lateNightExpiry = profile?.late_night_expiry || null
+  const realmIndex = useMemo(() => {
+    let index = 0; for (let i = 0; i < REALMS.length; i++) { if (qi >= REALMS[i].xp) index = i; else break } return index
+  }, [qi])
+  const currentRealm = REALMS[realmIndex] || REALMS[0]
   const nextRealm = REALMS[realmIndex + 1] || REALMS[REALMS.length - 1]
 
-  function performReset(newDateKey, oldDateKey) {
-    setState(prev => {
-      const historyEntry = {
-        date: oldDateKey,
-        minutes: prev.todayTotalMinutes,
-        qiTotal: prev.qi, 
-        stones: prev.spiritStones 
-      }
+  // --- ACTIONS ---
+  const signUp = (email, password, username) => supabase.auth.signUp({ email, password, options: { data: { full_name: username } } })
+  const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password })
+  const signOut = () => supabase.auth.signOut()
 
-      const snapshot = {
-        lastLoginDate: prev.lastLoginDate,
-        todayTotalMinutes: prev.todayTotalMinutes,
-        enduranceMilestonesAwarded: prev.enduranceMilestonesAwarded,
-      }
-      
-      return { 
-        ...prev, 
-        lastLoginDate: newDateKey, 
-        todayTotalMinutes: 0, 
-        enduranceMilestonesAwarded: [],
-        previousDayState: snapshot,
-        history: [...(prev.history || []), historyEntry] 
-      }
-    })
+  // 1. Tasks
+  async function addTask(task) {
+    if (!session) return;
+    const tempId = crypto.randomUUID()
+    setTasks(prev => [{ ...task, id: tempId, isCompleted: false }, ...prev]) 
 
-    const todayDayIndex = new Date().getDay()
-    setTasks(prevTasks => prevTasks.map(task => {
-      let shouldReset = false
-      if (task.repeat === 'daily') shouldReset = true
-      else if (task.repeat === 'custom' && task.repeatDays && task.repeatDays.includes(todayDayIndex)) shouldReset = true
-
-      if (shouldReset) {
-        const resetSubtasks = task.subtasks ? task.subtasks.map(st => ({ ...st, completed: false })) : []
-        return { ...task, isCompleted: false, subtasks: resetSubtasks }
-      }
-      return task
-    }))
-  }
-
-  function undoDailyReset() {
-    if (!state.previousDayState) return
-    const prev = state.previousDayState
-    setState(curr => ({
-      ...curr,
-      lastLoginDate: prev.lastLoginDate,
-      todayTotalMinutes: prev.todayTotalMinutes,
-      enduranceMilestonesAwarded: prev.enduranceMilestonesAwarded,
-      previousDayState: null, 
-      lateNightExpiry: getTodayKey(),
-      history: curr.history.slice(0, -1) 
-    }))
-  }
-
-  function extendLateNight(days) {
-    const today = new Date()
-    const expiry = new Date(today)
-    expiry.setDate(today.getDate() + days)
-    const expiryKey = expiry.toISOString().slice(0, 10)
-    setState(prev => ({ ...prev, lateNightExpiry: expiryKey }))
-  }
-
-  function disableLateNight() { setState(prev => ({ ...prev, lateNightExpiry: null })) }
-
-  function forceStartNewDay() {
-    const todayKey = getTodayKey()
-    performReset(todayKey, state.lastLoginDate || todayKey)
-  }
-
-  function gainQi(amount) {
-    if (amount === 0) return
-    setState(prev => {
-      const multiplier = 1 
-      const finalAmount = Math.floor(amount * multiplier)
-      const newQi = Math.max(0, prev.qi + finalAmount)
-      const cappedQi = Math.min(newQi, REALMS[REALMS.length - 1].xp)
-      return { ...prev, qi: cappedQi, lastLoginDate: getTodayKey() }
-    })
-  }
-
-  function gainStones(amount) {
-     if (amount <= 0) return
-     setState(prev => ({ ...prev, spiritStones: (prev.spiritStones || 0) + amount }))
-  }
-
-  function completeTask(task) {
-    if (task.isTrivial) return 
-    const key = String(task.difficulty).toLowerCase()
-    const xp = DIFFICULTY_TIERS[key]?.xp || 10
-    gainQi(xp)
-  }
-
-  // ✅ Harvest Logic Updated: Now accepts calculated XP and Stones from the Modal
-  function processDailyHarvest(minutesWorked, streaks, calculatedXP, calculatedStones) {
-    const todayKey = getTodayKey()
-    setState(prev => {
-      const isNewDay = prev.lastLoginDate !== todayKey
-      const isLateNight = prev.lateNightExpiry && new Date(prev.lateNightExpiry) >= new Date(todayKey)
-      const baseTodayMinutes = (isNewDay && !isLateNight) ? 0 : prev.todayTotalMinutes
-      const baseAwarded = (isNewDay && !isLateNight) ? [] : prev.enduranceMilestonesAwarded
-      const updatedTotalMinutes = baseTodayMinutes + minutesWorked
-
-      if (updatedTotalMinutes > 1440) {
-        alert("Cultivator! One day only has 24 hours.")
-        return prev 
-      }
-      
-      // Milestones
-      let milestoneXP = 0
-      const newAwarded = [...baseAwarded]
-      ENDURANCE_MILESTONES.forEach(m => {
-        if (!newAwarded.includes(m.minutes) && updatedTotalMinutes >= m.minutes) {
-          milestoneXP += m.xp
-          newAwarded.push(m.minutes)
+    const dbPayload = mapTaskToDB(task, session.user.id)
+    const { data } = await supabase.from('tasks').insert(dbPayload).select().single()
+    
+    if (data) {
+      setTasks(prev => prev.map(t => t.id === tempId ? mapTaskFromDB(data) : t))
+      if (task.tags?.length > 0) {
+        const newTags = task.tags.filter(t => !knownTags.includes(t))
+        if (newTags.length > 0) {
+           const updatedTags = [...knownTags, ...newTags]
+           setProfile(prev => ({...prev, known_tags: updatedTags}))
+           await supabase.from('profiles').update({ known_tags: updatedTags }).eq('id', session.user.id)
         }
-      })
-
-      // Streaks
-      let streakXP = 0
-      Object.entries(streaks).forEach(([duration, count]) => {
-        const value = STREAK_VALUES[duration] || 0
-        streakXP += (value * count)
-      })
-
-      const totalHarvest = calculatedXP + milestoneXP + streakXP
-      const newQi = Math.min(prev.qi + totalHarvest, REALMS[REALMS.length - 1].xp)
-      const newStones = (prev.spiritStones || 0) + calculatedStones
-
-      return {
-        ...prev,
-        qi: newQi,
-        spiritStones: newStones,
-        lastLoginDate: isLateNight ? prev.lastLoginDate : todayKey,
-        todayTotalMinutes: updatedTotalMinutes,
-        enduranceMilestonesAwarded: newAwarded
       }
-    })
+    } else {
+      setTasks(prev => prev.filter(t => t.id !== tempId)) 
+    }
   }
 
-  function addTask(task) {
-    if (task.tags?.length > 0) {
-      setState(prev => {
-        const newTags = task.tags.filter(t => !prev.knownTags.includes(t))
-        return newTags.length ? { ...prev, knownTags: [...prev.knownTags, ...newTags] } : prev
-      })
-    }
-    const newTask = { 
-      id: crypto.randomUUID(), 
-      isCompleted: false, 
-      difficulty: 'low', 
-      tags: [], 
-      color: 'default', 
-      repeat: 'once',
-      isTrivial: false,
-      notes: '', 
-      subtasks: [], 
-      repeatDays: [], 
-      ...task 
-    }
-    setTasks(prev => [newTask, ...prev])
+  async function updateTask(id, updates) {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
+    const dbUpdates = {}
+    if (updates.title !== undefined) dbUpdates.title = updates.title
+    if (updates.isCompleted !== undefined) dbUpdates.is_completed = updates.isCompleted
+    if (updates.difficulty !== undefined) dbUpdates.difficulty = updates.difficulty
+    if (updates.color !== undefined) dbUpdates.color = updates.color
+    await supabase.from('tasks').update(dbUpdates).eq('id', id)
   }
 
-  function duplicateTask(taskId) {
-    const originalTask = tasks.find(t => t.id === taskId)
-    if (!originalTask) return
-    const newTask = { ...originalTask, id: crypto.randomUUID(), title: `${originalTask.title} (Copy)`, isCompleted: false }
-    setTasks(prev => [newTask, ...prev])
+  async function deleteTask(id) {
+    setTasks(prev => prev.filter(t => t.id !== id))
+    await supabase.from('tasks').delete().eq('id', id)
   }
 
-  function updateTask(id, updates) { setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t)) }
-  function reorderTasks(newOrderedTasks) { setTasks(newOrderedTasks) }
-  function deleteTask(id) { setTasks(prev => prev.filter(t => t.id !== id)) }
-  function toggleTaskCompletion(id) { setTasks(prev => prev.map(t => t.id === id ? { ...t, isCompleted: !t.isCompleted } : t)) }
-  function setTagColor(tagName, colorKey) { setTagColors(prev => ({ ...prev, [tagName]: colorKey })) }
-
-  function addWeeklyTarget(targetData) {
-    const data = typeof targetData === 'string' ? { title: targetData } : targetData
-    if (data.tags?.length > 0) {
-      setState(prev => {
-        const newTags = data.tags.filter(t => !prev.knownTags.includes(t))
-        return newTags.length ? { ...prev, knownTags: [...prev.knownTags, ...newTags] } : prev
-      })
+  async function toggleTaskCompletion(id) {
+    const task = tasks.find(t => t.id === id)
+    if (!task) return
+    const newVal = !task.isCompleted
+    updateTask(id, { isCompleted: newVal })
+    if (newVal && !task.isTrivial) {
+       const key = String(task.difficulty).toLowerCase()
+       const xpGain = DIFFICULTY_TIERS[key]?.xp || 10
+       gainQi(xpGain)
     }
-    const newTarget = {
-      id: crypto.randomUUID(), title: data.title || 'Untitled Oath', difficulty: data.difficulty || 'med',
-      tags: data.tags || [], progress: 0, status: 'active', createdAt: new Date().toISOString(), ...data
-    }
-    setWeeklyTargets(prev => [newTarget, ...prev])
   }
 
-  function duplicateWeeklyTarget(id) {
-    const original = weeklyTargets.find(t => t.id === id)
-    if (!original) return
-    const newTarget = { ...original, id: crypto.randomUUID(), title: `${original.title} (Copy)`, progress: 0, createdAt: new Date().toISOString() }
-    setWeeklyTargets(prev => [newTarget, ...prev])
+  async function reorderTasks(newOrderedTasks) {
+    setTasks(newOrderedTasks)
+    const updates = newOrderedTasks.map((t, index) => ({ id: t.id, order_index: index, user_id: session.user.id }))
+    await supabase.from('tasks').upsert(updates, { onConflict: 'id' })
   }
 
-  function updateWeeklyTarget(id, updates) {
-    if (updates.tags?.length > 0) {
-      setState(prev => {
-        const newTags = updates.tags.filter(t => !prev.knownTags.includes(t))
-        return newTags.length ? { ...prev, knownTags: [...prev.knownTags, ...newTags] } : prev
-      })
+  async function duplicateTask(id) {
+    const original = tasks.find(t => t.id === id)
+    if(!original) return
+    addTask({ ...original, title: `${original.title} (Copy)`, isCompleted: false })
+  }
+
+  // 2. Weekly Targets
+  async function addWeeklyTarget(targetData) {
+    if (!session) return
+    const optimisticTarget = { ...targetData, id: crypto.randomUUID(), progress: 0 }
+    setWeeklyTargets(prev => [optimisticTarget, ...prev])
+
+    const dbPayload = {
+      user_id: session.user.id,
+      title: targetData.title,
+      difficulty: targetData.difficulty || 'med',
+      tags: targetData.tags || [],
+      progress: 0,
+      status: 'active'
     }
+    const { data } = await supabase.from('weekly_targets').insert(dbPayload).select().single()
+    if (data) setWeeklyTargets(prev => prev.map(t => t.id === optimisticTarget.id ? data : t))
+  }
+
+  async function updateWeeklyTarget(id, updates) {
     setWeeklyTargets(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
+    await supabase.from('weekly_targets').update(updates).eq('id', id)
   }
-  function deleteWeeklyTarget(id) { setWeeklyTargets(prev => prev.filter(t => t.id !== id)) }
-  function contributeToWeeklyTarget(id, amount) {
-    setWeeklyTargets(prev => prev.map(t => {
-      if (t.id === id) {
-        const numeric = Number.isNaN(Number(amount)) ? 0 : Number(amount)
-        const newProgress = Math.min(100, Math.max(0, numeric))
-        if (newProgress >= 100 && t.progress < 100) {
-             gainStones(50) 
-        }
-        return { ...t, progress: newProgress, status: newProgress >= 100 ? 'completed' : 'active' }
-      }
-      return t
-    }))
-  }
-  function reorderWeeklyTargets(newOrder) { setWeeklyTargets(newOrder) }
 
-  function hardReset() { localStorage.clear(); window.location.reload() }
+  async function deleteWeeklyTarget(id) {
+    setWeeklyTargets(prev => prev.filter(t => t.id !== id))
+    await supabase.from('weekly_targets').delete().eq('id', id)
+  }
+
+  async function reorderWeeklyTargets(newOrderedTargets) {
+    setWeeklyTargets(newOrderedTargets)
+    const updates = newOrderedTargets.map((t, index) => ({
+      id: t.id,
+      order_index: index,
+      user_id: session.user.id
+    }))
+    await supabase.from('weekly_targets').upsert(updates, { onConflict: 'id' })
+  }
+
+  async function contributeToWeeklyTarget(targetId, amount) {
+    const target = weeklyTargets.find(t => t.id === targetId)
+    if (!target) return
+    const newProgress = Math.min(100, Math.max(0, (target.progress || 0) + amount))
+    const newStatus = newProgress >= 100 ? 'completed' : 'active'
+    setWeeklyTargets(prev => prev.map(t => t.id === targetId ? { ...t, progress: newProgress, status: newStatus } : t))
+    await supabase.from('weekly_targets').update({ progress: newProgress, status: newStatus }).eq('id', targetId)
+    if (newProgress >= 100 && target.progress < 100) gainStones(50)
+  }
+
+  async function duplicateWeeklyTarget(id) {
+    const original = weeklyTargets.find(t => t.id === id)
+    if(!original) return
+    addWeeklyTarget({ title: `${original.title} (Copy)`, difficulty: original.difficulty, tags: original.tags })
+  }
+
+  // 3. Profile
+  async function gainQi(amount) {
+    if (!profile || amount === 0) return
+    const newQi = Math.max(0, profile.qi + amount)
+    setProfile(prev => ({ ...prev, qi: newQi })) 
+    await supabase.from('profiles').update({ qi: newQi }).eq('id', session.user.id)
+  }
+
+  async function gainStones(amount) {
+    if (!profile) return
+    const newStones = (profile.spirit_stones || 0) + amount
+    setProfile(prev => ({ ...prev, spirit_stones: newStones }))
+    await supabase.from('profiles').update({ spirit_stones: newStones }).eq('id', session.user.id)
+  }
+
+  async function processDailyHarvest(minutesWorked, streaks, calculatedXP, calculatedStones) {
+    if (!session || !profile) return
+    const currentMinutes = profile.today_total_minutes || 0
+    const newTotalMinutes = currentMinutes + minutesWorked
+    let milestoneXP = 0
+    const currentMilestones = profile.endurance_milestones || []
+    const newMilestones = [...currentMilestones]
+    
+    ENDURANCE_MILESTONES.forEach(m => {
+      if (!currentMilestones.includes(m.minutes) && newTotalMinutes >= m.minutes) {
+        milestoneXP += m.xp
+        newMilestones.push(m.minutes)
+      }
+    })
+
+    let streakBonus = 0
+    Object.entries(streaks).forEach(([key, count]) => { if(count > 0) streakBonus += (STREAK_VALUES[key] || 0) * count })
+
+    const totalQiGained = calculatedXP + milestoneXP + streakBonus
+    const newQi = (profile.qi || 0) + totalQiGained
+    const newStones = (profile.spirit_stones || 0) + calculatedStones
+
+    setProfile(prev => ({ ...prev, qi: newQi, spirit_stones: newStones, today_total_minutes: newTotalMinutes, endurance_milestones: newMilestones }))
+
+    await Promise.all([
+      supabase.from('profiles').update({ qi: newQi, spirit_stones: newStones, today_total_minutes: newTotalMinutes, endurance_milestones: newMilestones, last_login_date: getTodayKey() }).eq('id', session.user.id),
+      supabase.from('cultivation_logs').insert({ user_id: session.user.id, minutes_spent: minutesWorked, qi_gained: totalQiGained, qi_total_snapshot: newQi, stones_total_snapshot: newStones, log_date: getTodayKey() })
+    ])
+  }
+
+  async function setTagColor(tag, color) {
+    const newColors = { ...tagColors, [tag]: color }
+    setTagColors(newColors)
+    await supabase.from('profiles').update({ tag_colors: newColors }).eq('id', session?.user?.id)
+  }
+
+  async function undoDailyReset() {
+    if (!profile.previous_day_state) return
+    const prev = profile.previous_day_state
+    setProfile(curr => ({ ...curr, ...prev, previous_day_state: null }))
+    await supabase.from('profiles').update({ today_total_minutes: prev.today_total_minutes, endurance_milestones: prev.endurance_milestones, last_login_date: prev.last_login_date, previous_day_state: null }).eq('id', session.user.id)
+  }
 
   return (
     <CultivationContext.Provider value={{
-      state, 
-      qi: state.qi, 
-      spiritStones: state.spiritStones, 
-      knownTags: state.knownTags, 
-      lateNightExpiry: state.lateNightExpiry,
-      tasks, currentRealm, nextRealm, realmIndex, realms: REALMS, tagColors,
-      weeklyTargets,
-      gainQi, gainStones, completeTask, processDailyHarvest, 
-      addTask, updateTask, deleteTask, toggleTaskCompletion, reorderTasks, setTagColor, duplicateTask,
-      addWeeklyTarget, updateWeeklyTarget, deleteWeeklyTarget, duplicateWeeklyTarget, contributeToWeeklyTarget, 
-      reorderWeeklyTargets,
-      forceStartNewDay, extendLateNight, disableLateNight, undoDailyReset, hardReset
+      session, loading, signUp, signIn, signOut,
+      profile, qi, spiritStones, tasks, weeklyTargets, knownTags,
+      currentRealm, nextRealm, realmIndex, realms: REALMS,
+      tagColors, lateNightExpiry, state: profile || {},
+      
+      gainQi, gainStones,
+      addTask, updateTask, deleteTask, toggleTaskCompletion, reorderTasks, duplicateTask,
+      addWeeklyTarget, updateWeeklyTarget, deleteWeeklyTarget, reorderWeeklyTargets, contributeToWeeklyTarget, duplicateWeeklyTarget,
+      setTagColor, processDailyHarvest, undoDailyReset,
+      
+      // Placeholders
+      completeTask: () => {}, 
+      extendLateNight: () => console.log("Late Night Logic pending"),
+      disableLateNight: () => {},
+      hardReset: () => {}
     }}>
-      {children}
+      {!loading && children}
     </CultivationContext.Provider>
   )
 }
