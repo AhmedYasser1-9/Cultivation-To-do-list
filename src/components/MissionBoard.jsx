@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence, Reorder } from 'framer-motion'
-import { Plus, User, CheckCircle2, ListTodo, Sun, Search, Filter, X, Zap, ArrowRight } from 'lucide-react'
+import { Plus, User, CheckCircle2, ListTodo, Sun, Search, Filter, X, Zap, ArrowRight, Repeat } from 'lucide-react'
 import { useCultivation, DIFFICULTY_TIERS } from '../context/CultivationContext.jsx'
 import MissionCard from './MissionCard.jsx'
 import TaskFormModal from './TaskFormModal.jsx'
@@ -60,7 +60,6 @@ export default function MissionBoard() {
   // List Logic
   const displayTasks = activeTab === 'todo' ? filteredTasks.filter(t => !t.isCompleted) : filteredTasks.filter(t => t.isCompleted)
 
-  // ✅ CRITICAL FIX: Save Future Order
   const handleReorder = (newOrderedSubset) => {
     const subsetIds = new Set(newOrderedSubset.map(t => t.id))
     const otherTasks = tasks.filter(t => !subsetIds.has(t.id))
@@ -76,11 +75,10 @@ export default function MissionBoard() {
     toggleTaskCompletion(id)
   }
 
-  // ✅ دالة Foresight المصححة: تحافظ على خاصية التكرار
+  // ✅ Spirit Echo (Formerly Foresight)
   const handleForesightAction = () => {
     const tomorrowDayIndex = (new Date().getDay() + 1) % 7
     
-    // البحث عن المهام المكتملة فقط (Done) التي هي daily أو custom بتاريخ الغد
     const completedTasks = tasks.filter(t => t.isCompleted)
     const tasksToAdd = completedTasks.filter(t => {
       const isDaily = t.repeat === 'daily'
@@ -89,26 +87,23 @@ export default function MissionBoard() {
     })
 
     if (tasksToAdd.length === 0) {
-      setToast({ isOpen: true, message: '🔮 لا توجد مهام مكتملة مخططة للغد', type: 'info' })
+      setToast({ isOpen: true, message: '🔮 No echoes found for tomorrow', type: 'info' })
       return
     }
 
-    // إنشاء نسخ جديدة من المهام وحذف المهام الأصلية من Done
     tasksToAdd.forEach(originalTask => {
       const newTask = {
         ...originalTask,
         id: crypto.randomUUID(),
         isCompleted: false,
-        // ✅ FIX: نحتفظ بنوع التكرار الأصلي لكي تستمر الدورة ولا تموت المهمة
         repeat: originalTask.repeat, 
         repeatDays: originalTask.repeatDays
       }
       addTask(newTask)
-      // حذف المهمة الأصلية من Done لتجنب التكرار
       deleteTask(originalTask.id)
     })
 
-    setToast({ isOpen: true, message: `✨ تم استحضار ${tasksToAdd.length} مهمة للغد!`, type: 'success' })
+    setToast({ isOpen: true, message: `✨ ${tasksToAdd.length} tasks echoed from the void!`, type: 'success' })
   }
 
   const handleQuickAdd = (e) => {
@@ -148,13 +143,14 @@ export default function MissionBoard() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* ✅ Next Tasks Button */}
             <motion.button 
               whileHover={{ scale: 1.05 }} 
               onClick={handleForesightAction}
               className="flex items-center gap-2 rounded-xl border border-indigo-500/50 bg-indigo-600/20 px-3 py-2 text-xs font-bold uppercase text-indigo-300 hover:bg-indigo-600 hover:text-white transition-all shadow-lg shadow-indigo-500/20"
             >
-              <Zap size={16} />
-              <span className="hidden sm:inline">Foresight</span>
+              <Repeat size={16} />
+              <span className="hidden sm:inline">Next Tasks</span>
             </motion.button>
             <div className="w-px h-6 bg-slate-800 mx-1"></div>
             <motion.button whileHover={{ scale: 1.05 }} onClick={() => setIsHarvestOpen(true)} className="flex items-center gap-2 rounded-xl border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs font-bold uppercase text-amber-300 hover:bg-amber-500 hover:text-slate-900 transition-colors mr-2"><Sun size={16} /> <span className="hidden sm:inline">Harvest</span></motion.button>

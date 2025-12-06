@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, Download, Upload, Trash2, Settings, Save, AlertTriangle } from 'lucide-react'
+import { X, Download, Upload, Trash2, Settings, Save, AlertTriangle, LogOut } from 'lucide-react'
 import ConfirmModal from './ConfirmModal.jsx' // ✅ Import Custom Modal
 
-export default function SettingsModal({ isOpen, onClose, onHardReset }) {
+export default function SettingsModal({ isOpen, onClose, onHardReset, onExit }) {
   const fileInputRef = useRef(null)
   const [confirmResetOpen, setConfirmResetOpen] = useState(false) // State for custom modal
 
@@ -78,7 +78,15 @@ export default function SettingsModal({ isOpen, onClose, onHardReset }) {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800">
+              <div className="pt-4 border-t border-slate-800 space-y-3">
+                {onExit && (
+                  <button 
+                    onClick={onExit}
+                    className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors text-xs font-bold uppercase tracking-wide"
+                  >
+                    <LogOut size={16} /> Exit
+                  </button>
+                )}
                 <button 
                   onClick={requestHardReset} // ✅ New Handler
                   className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-red-900/30 bg-red-950/10 text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors text-xs font-bold uppercase tracking-wide"

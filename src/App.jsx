@@ -1,39 +1,135 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
-import { Brain, ScrollText, Store, Settings, Moon, RotateCcw, Calendar, Lock, User } from 'lucide-react'
+import { Brain, ScrollText, Store, Settings, Moon, RotateCcw, Calendar, Lock, User, LogOut } from 'lucide-react'
 import RealmStatus from './components/RealmStatus.jsx'
 import MissionBoard from './components/MissionBoard.jsx'
 import WeeklyPlan from './components/WeeklyPlan.jsx'
 import BreakthroughModal from './components/BreakthroughModal.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
 import LateNightModal from './components/LateNightModal.jsx'
+import Auth from './components/Auth.jsx'
 import { useCultivation } from './context/CultivationContext.jsx'
 
-// ✅ تم تحديث القائمة لإغلاق البوابات غير الجاهزة
 const navItems = [
   { id: 'personal', label: 'Personal Cultivation', description: 'Manage your daily path', icon: User },
   { id: 'weekly', label: 'Weekly Plan', description: 'Track grand ambitions', icon: Calendar }, 
   { id: 'sect', label: 'Sect Missions', description: 'Community Challenges (Locked)', icon: ScrollText, locked: true }, 
-  { id: 'stats', label: 'Inner World', description: 'Mind Palace (Locked)', icon: Brain, locked: true }, // 🔒 Locked
-  { id: 'shop', label: 'Spirit Pavilion', description: 'Merit Exchange (Locked)', icon: Store, locked: true }, // 🔒 Locked
+  { id: 'stats', label: 'Inner World', description: 'Mind Palace (Locked)', icon: Brain, locked: true }, 
+  { id: 'shop', label: 'Spirit Pavilion', description: 'Merit Exchange (Locked)', icon: Store, locked: true }, 
 ]
 
 function App() {
-  const { currentRealm, lateNightExpiry, extendLateNight, disableLateNight, undoDailyReset, state, hardReset } = useCultivation()
+  // ✅ استخراج البيانات من السياق مع "دروع حماية" (Default Values)
+  // هذا يمنع الشاشة البيضاء إذا كانت دالة معينة غير موجودة في السياق الجديد بعد
+  const context = useCultivation()
+  
+  // حماية إضافية في حال كان السياق نفسه غير موجود
+  if (!context) {
+    return <div className="text-red-500 p-10">Error: Cultivation Context is missing! Check main.jsx</div>
+  }
+
+  const { 
+    session, 
+    loading, 
+    signOut,
+    currentRealm,
+    realmIndex,
+    qi,
+    profile,
+    // القيم الافتراضية للميزات التي لم تنقل بعد
+    lateNightExpiry = null, 
+    extendLateNight = () => console.warn("Late Night Not Implemented Yet"), 
+    disableLateNight = () => {}, 
+    undoDailyReset = () => {}, 
+    state = {}, 
+    hardReset = () => {} 
+  } = context
+
   const [showBreakthrough, setShowBreakthrough] = useState(null)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLateNightOpen, setIsLateNightOpen] = useState(false)
   const [currentView, setCurrentView] = useState('personal')
   
-  const prevRealmXP = useRef(currentRealm.xp)
+  const prevSessionId = useRef(null)
+  const isFirstLoadAfterLogin = useRef(false)
 
+  // ✅ إعادة تعيين الحالة عند تغيير الـ session (الخروج والدخول)
   useEffect(() => {
-    if (currentRealm.xp > prevRealmXP.current) {
-      setShowBreakthrough(currentRealm)
+    const currentSessionId = session?.user?.id || null
+    
+    // إذا تغير الـ session (خروج أو دخول مستخدم جديد)
+    if (prevSessionId.current !== currentSessionId) {
+      // إعادة تعيين جميع الحالات
+      isFirstLoadAfterLogin.current = true
+      setShowBreakthrough(null)
+      setIsSettingsOpen(false)
+      setIsLateNightOpen(false)
+      setCurrentView('personal')
+      
+      // مسح localStorage للجلسة السابقة
+      if (prevSessionId.current) {
+        localStorage.removeItem(`prevRealmIndex_${prevSessionId.current}`)
+      }
+      
+      // تحديث المرجع
+      prevSessionId.current = currentSessionId
     }
-    prevRealmXP.current = currentRealm.xp
-  }, [currentRealm])
+  }, [session?.user?.id])
 
+  // ✅ فحص breakthrough - فقط بعد اكتمال التحميل الأولي
+  useEffect(() => {
+    // تأكد من أن البيانات محملة بالكامل
+    if (loading || !session || !profile || realmIndex === undefined || realmIndex === null) {
+      return
+    }
+    
+    const storageKey = `prevRealmIndex_${session.user.id}`
+    
+    // ✅ في أول تحميل بعد الدخول، نحفظ الـ realm index الحالي بدون عرض breakthrough
+    // نستخدم setTimeout للتأكد من استقرار البيانات
+    if (isFirstLoadAfterLogin.current) {
+      const timer = setTimeout(() => {
+        localStorage.setItem(storageKey, realmIndex.toString())
+        isFirstLoadAfterLogin.current = false
+      }, 200) // تأخير 200ms للتأكد من استقرار البيانات
+      
+      return () => clearTimeout(timer)
+    }
+    
+    // ✅ قراءة آخر realm index من localStorage
+    const storedRealmIndex = localStorage.getItem(storageKey)
+    const prevRealmIndex = storedRealmIndex ? parseInt(storedRealmIndex) : null
+    
+    // ✅ فقط إذا كان هناك زيادة حقيقية في Realm Index (breakthrough حقيقي)
+    if (prevRealmIndex !== null && realmIndex > prevRealmIndex) {
+      setShowBreakthrough(currentRealm)
+      localStorage.setItem(storageKey, realmIndex.toString())
+    } else if (prevRealmIndex === null || realmIndex !== prevRealmIndex) {
+      // تحديث القيمة في localStorage حتى لو ما فيش breakthrough
+      localStorage.setItem(storageKey, realmIndex.toString())
+    }
+  }, [realmIndex, loading, session, profile, currentRealm])
+
+  // 1️⃣ شاشة التحميل (تظهر أثناء الاتصال بـ Supabase)
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-4">
+        <div className="w-16 h-16 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin"></div>
+        <p className="text-emerald-500 animate-pulse font-mono uppercase tracking-widest text-sm">
+          Consulting the Heavens...
+        </p>
+      </div>
+    )
+  }
+
+  // 2️⃣ بوابة الدخول (إذا لم يكن هناك مستخدم مسجل)
+  if (!session) {
+    return <Auth />
+  }
+
+  // حساب اسم المستخدم بشكل آمن جداً
+  const userName = session?.user?.user_metadata?.full_name || session?.user?.email || "Cultivator"
+
+  // 3️⃣ التطبيق الرئيسي
   return (
     <div className="min-h-screen bg-slate-950 text-emerald-100">
       {/* Sidebar */}
@@ -41,6 +137,15 @@ function App() {
         <div className="mb-10 space-y-2">
           <p className="text-xs uppercase tracking-[0.6em] text-amber-200">Order of Dawn</p>
           <h1 className="text-2xl font-semibold text-emerald-400">Cultivation Log</h1>
+          <div className="pt-2">
+            <p className="text-xs text-slate-500 mb-1">Elder:</p>
+            <h2 
+              className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-amber-300 to-emerald-400 truncate" 
+              title={userName}
+            >
+              {userName}
+            </h2>
+          </div>
         </div>
         
         <nav className="space-y-4 flex-1">
@@ -53,11 +158,10 @@ function App() {
                 currentView === id 
                   ? 'bg-slate-900 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
                   : locked 
-                    ? 'bg-slate-950/40 border-slate-800 opacity-50 cursor-not-allowed' // Locked Style (Dimmed)
-                    : 'bg-gradient-to-br from-slate-950 via-slate-950/80 to-slate-900/60 border-amber-900/30 hover:border-amber-500/60 hover:bg-slate-900' // Alive Style
+                    ? 'bg-slate-950/40 border-slate-800 opacity-50 cursor-not-allowed' 
+                    : 'bg-gradient-to-br from-slate-950 via-slate-950/80 to-slate-900/60 border-amber-900/30 hover:border-amber-500/60 hover:bg-slate-900' 
               }`}
             >
-              {/* Active Glow */}
               <div className={`absolute inset-0 rounded-2xl blur-3xl transition-colors ${currentView === id ? 'bg-emerald-500/10' : 'bg-transparent'}`} />
               
               <div className="relative flex items-center justify-between">
@@ -106,11 +210,9 @@ function App() {
         <div className="mx-auto flex max-w-5xl flex-col gap-8">
           <RealmStatus />
           
-          {/* ✅ View Switching */}
           {currentView === 'personal' && <MissionBoard />}
           {currentView === 'weekly' && <WeeklyPlan />}
           
-          {/* Locked Views Message (Just in case logic slips, though buttons are disabled) */}
           {(currentView === 'stats' || currentView === 'shop' || currentView === 'sect') && (
             <div className="flex flex-col items-center justify-center py-24 border border-dashed border-slate-800 rounded-3xl bg-slate-900/50">
               <Lock size={48} className="text-slate-700 mb-4" />
@@ -125,7 +227,7 @@ function App() {
 
       {/* Modals */}
       {showBreakthrough && <BreakthroughModal realm={showBreakthrough} onClose={() => setShowBreakthrough(null)} />}
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onHardReset={hardReset} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onHardReset={hardReset} onExit={signOut} />
       <LateNightModal isOpen={isLateNightOpen} onClose={() => setIsLateNightOpen(false)} onActivate={extendLateNight} onDisable={disableLateNight} currentExpiry={lateNightExpiry} />
     </div>
   )
