@@ -203,9 +203,13 @@ export function CultivationProvider({ children }) {
               if (refreshErr) console.error("❌ refreshSession error:", refreshErr)
               if (data?.session) {
                 return handleSession(data.session, "refreshSession")
+              } else {
+                 console.warn("⚠️ Refresh failed or returned no session. Clearing session.")
+                 return handleSession(null, "refreshFailed")
               }
             } catch (err) {
               console.error("❌ refreshSession threw:", err)
+              return handleSession(null, "refreshError")
             }
           }
 
@@ -503,12 +507,29 @@ export function CultivationProvider({ children }) {
     let updatedInventory = []
 
     if (newQty >= 0) { // Allow 0 to remain if active
-        // تحديث الكمية في الحالة المحلية
-        updatedInventory = inventory.map(i => i.id === invItem.id ? { ...i, quantity: newQty, is_active: true } : i)
+        // ✅ Deactivate other active consumables (fix for multiple concurrent actives)
+        const itemsToDeactivate = inventory.filter(i => 
+             i.is_active && 
+             i.id !== invItem.id && 
+             shopItems.find(s => s.id === i.item_id)?.category === 'consumable'
+        )
+
+        // Clean up expiry for deactivated items
+        itemsToDeactivate.forEach(i => delete expiryData[i.id])
+        localStorage.setItem(expiryStorageKey, JSON.stringify(expiryData))
+
+        // Update local state
+        updatedInventory = inventory.map(i => {
+             if (i.id === invItem.id) return { ...i, quantity: newQty, is_active: true }
+             if (itemsToDeactivate.find(d => d.id === i.id)) return { ...i, is_active: false }
+             return i
+        })
         
-        // تحديث قاعدة البيانات
-        // إذا وصلت الكمية 0، لا نحذف الصف من قاعدة البيانات، فقط نحدث الكمية لـ 0 ونبقيه active
+        // Update DB
         await supabase.from('inventory').update({ quantity: newQty, is_active: true }).eq('id', invItem.id)
+        if (itemsToDeactivate.length > 0) {
+            await supabase.from('inventory').update({ is_active: false }).in('id', itemsToDeactivate.map(i => i.id))
+        }
     }
 
     // لو الكمية بقت أقل من 0 (وده مش المفروض يحصل بالواجهة، بس زيادة أمان)
