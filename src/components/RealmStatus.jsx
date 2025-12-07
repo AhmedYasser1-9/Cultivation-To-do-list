@@ -6,7 +6,6 @@ import { useCultivation } from '../context/CultivationContext.jsx'
 export function RealmStatus() {
   const { qi, spiritStones, currentRealm, nextRealm, realmIndex, realms, inventory, shopItems, session } = useCultivation()
   const [timeRemaining, setTimeRemaining] = useState({})
-  const [showAllActive, setShowAllActive] = useState(false)
 
   const isMaxRealm = realmIndex >= realms.length - 1
   const currentXpFloor = currentRealm?.xp ?? 0

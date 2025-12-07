@@ -39,33 +39,11 @@ const ENDURANCE_MILESTONES = [
   { minutes: 600, xp: 1800 }, { minutes: 750, xp: 2500 }, { minutes: 900, xp: 3000 },
 ]
 
-const getTodayKey = () => {
-  const d = new Date()
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
-}
+const getTodayKey = () => new Date().toISOString().slice(0, 10)
 const getYesterdayKey = () => {
   const d = new Date()
   d.setDate(d.getDate() - 1)
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
-}
-
-// Parse access_token / refresh_token from URL hash (magic link or direct token URL)
-const extractHashSession = () => {
-  if (typeof window === 'undefined') return null
-  const hash = window.location.hash || ''
-  if (!hash.includes('access_token')) return null
-  const params = new URLSearchParams(hash.replace(/^#/, ''))
-  const access_token = params.get('access_token')
-  const refresh_token = params.get('refresh_token')
-  const expires_in = params.get('expires_in')
-  const expires_at = params.get('expires_at')
-  if (!access_token || !refresh_token) return null
-  return {
-    access_token,
-    refresh_token,
-    expires_in: expires_in ? parseInt(expires_in) : undefined,
-    expires_at: expires_at ? parseInt(expires_at) : undefined,
-  }
+  return d.toISOString().slice(0, 10)
 }
 
 // Parse access_token / refresh_token from URL hash (magic link or direct token URL)
@@ -782,7 +760,6 @@ export function CultivationProvider({ children }) {
           localStorage.removeItem('cultivation_tasks')
           localStorage.removeItem('cultivation_targets')
           localStorage.removeItem('cultivation_last_sync')
-          localStorage.removeItem('cultivation_inventory')
           localStorage.removeItem('cultivation_shop') // ✅ Clear Shop Cache
           localStorage.removeItem('cultivation_inventory')
           window.location.reload()

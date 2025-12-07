@@ -34,9 +34,9 @@ export default function InventoryModal({ isOpen, onClose }) {
             if (diff > 0) {
               const hours = Math.floor(diff / (1000 * 60 * 60))
               const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-              newTimeRemaining[item.item_id] = `${hours}h ${minutes}m`
+              newTimeRemaining[item.id] = `${hours}h ${minutes}m`
             } else {
-              newTimeRemaining[item.item_id] = "Expired"
+              newTimeRemaining[item.id] = "Expired"
             }
           }
         }
@@ -134,7 +134,9 @@ export default function InventoryModal({ isOpen, onClose }) {
                 filteredInventory.map((item) => {
                   const isConsumable = item.shopItem.category === 'consumable'
                   const isDurationItem = DURATION_ITEMS.includes(item.shopItem.name)
-                  const timeLeft = timeRemaining[item.item_id]
+                  // Find timer for any of the grouped items (using their unique IDs)
+                  const activeId = item.ids.find(id => timeRemaining[id])
+                  const timeLeft = activeId ? timeRemaining[activeId] : null
                   const isConfirming = confirming === item.item_id
 
                   return (
