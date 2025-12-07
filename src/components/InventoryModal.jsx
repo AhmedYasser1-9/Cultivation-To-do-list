@@ -1,22 +1,60 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Package, X, Check, Beaker, Palette, Sparkles } from 'lucide-react'
+import { Package, X, Check, Beaker, Palette, Sparkles, Clock, AlertTriangle } from 'lucide-react'
 import { useCultivation } from '../context/CultivationContext.jsx'
 
-export default function InventoryModal({ isOpen, onClose }) {
-  const { inventory, shopItems, equipItem, consumeItem } = useCultivation()
-  const [activeTab, setActiveTab] = useState('all') // 'all' | 'cosmetic' | 'consumable'
-  const [processing, setProcessing] = useState(null)
+// ⏳ Duration Based Items (Show Extend / Countdown)
+const DURATION_ITEMS = ['Spirit Gathering Array', 'Focus Incense', 'Essence Liquid']
 
-  // ✅ 1. تجميع العناصر المتشابهة حسب item_id ودمج quantity
-  const getInventoryWithDetails = () => {
-    // تجميع حسب item_id
-    const grouped = {}
+export default function InventoryModal({ isOpen, onClose }) {
+  const { inventory, shopItems, equipItem, consumeItem, session } = useCultivation()
+  const [activeTab, setActiveTab] = useState('all') 
+  const [processing, setProcessing] = useState(null)
+  const [confirming, setConfirming] = useState(null) // ID of item being confirmed
+  const [timeRemaining, setTimeRemaining] = useState({})
+
+  // ✅ Timer Logic for Active Duration Items
+  useEffect(() => {
+    if (!isOpen || !session?.user?.id) return
+
+    const expiryStorageKey = `inventory_expiry_${session.user.id}`
     
+    const updateTimers = () => {
+      const expiryData = JSON.parse(localStorage.getItem(expiryStorageKey) || '{}')
+      const newTimeRemaining = {}
+      
+      inventory.forEach(item => {
+        if (item.is_active && DURATION_ITEMS.includes(shopItems.find(s => s.id === item.item_id)?.name)) {
+          const expiryTime = expiryData[item.id]
+          if (expiryTime) {
+            const now = new Date()
+            const expiry = new Date(expiryTime)
+            const diff = expiry - now
+            
+            if (diff > 0) {
+              const hours = Math.floor(diff / (1000 * 60 * 60))
+              const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+              newTimeRemaining[item.item_id] = `${hours}h ${minutes}m`
+            } else {
+              newTimeRemaining[item.item_id] = "Expired"
+            }
+          }
+        }
+      })
+      setTimeRemaining(newTimeRemaining)
+    }
+
+    updateTimers()
+    const interval = setInterval(updateTimers, 60000) // Update every minute
+    return () => clearInterval(interval)
+  }, [isOpen, inventory, shopItems, session?.user?.id])
+
+  // ... (rest of grouping logic remains same)
+  const getInventoryWithDetails = () => {
+    const grouped = {}
     inventory.forEach(invItem => {
       const shopItem = shopItems.find(s => s.id === invItem.item_id)
       if (!shopItem) return
-      
       const key = invItem.item_id
       if (!grouped[key]) {
         grouped[key] = {
@@ -24,27 +62,22 @@ export default function InventoryModal({ isOpen, onClose }) {
           shopItem,
           quantity: 0,
           is_active: false,
-          ids: [] // لحفظ IDs للاستخدام
+          ids: [] 
         }
       }
-      
       grouped[key].quantity += (invItem.quantity || 1)
       if (invItem.is_active) grouped[key].is_active = true
       grouped[key].ids.push(invItem.id)
     })
-    
     return Object.values(grouped)
   }
 
   const inventoryWithDetails = getInventoryWithDetails()
-
-  // ✅ Filter by category
   const filteredInventory = activeTab === 'all' 
     ? inventoryWithDetails
     : inventoryWithDetails.filter(item => item.shopItem?.category === activeTab)
 
   const handleEquip = async (item) => {
-    // استخدام أول ID من المجموعة
     const invItem = { id: item.ids[0], item_id: item.item_id }
     setProcessing(item.item_id)
     await equipItem(invItem, item.shopItem.type)
@@ -52,12 +85,12 @@ export default function InventoryModal({ isOpen, onClose }) {
   }
 
   const handleConsume = async (item) => {
-    // استخدام أول ID من المجموعة
-    const invItem = { id: item.ids[0], item_id: item.item_id, quantity: item.quantity }
+    const invItem = { id: item.ids[0], item_id: item.item_id, quantity: item.quantity, is_active: item.is_active }
     setProcessing(item.item_id)
     const res = await consumeItem(invItem, item.shopItem)
     if (!res.success) alert(res.msg)
     setProcessing(null)
+    setConfirming(null)
   }
 
   const cosmeticItems = inventoryWithDetails.filter(item => item.shopItem?.category === 'cosmetic')
@@ -68,60 +101,26 @@ export default function InventoryModal({ isOpen, onClose }) {
       {isOpen && (
         <motion.div 
           className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/95 backdrop-blur-md p-4" 
-          initial={{ opacity: 0 }} 
-          animate={{ opacity: 1 }} 
-          exit={{ opacity: 0 }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
         >
           <motion.div 
             className="relative w-full max-w-4xl bg-slate-900 border border-amber-500/30 rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden" 
-            initial={{ scale: 0.95 }} 
-            animate={{ scale: 1 }} 
-            exit={{ scale: 0.95 }}
+            initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} onClick={e => e.stopPropagation()}
           >
-            
-            {/* Header */}
+            {/* Header & Tabs ... (same as before) */}
             <div className="bg-slate-800/80 px-6 py-4 flex justify-between items-center border-b border-white/5">
               <div className="flex items-center gap-3">
                 <Package className="text-amber-400" size={24} />
                 <h2 className="text-xl font-bold text-amber-100 uppercase tracking-widest">Spirit Inventory</h2>
               </div>
-              <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800 transition-colors">
-                <X className="text-slate-500 hover:text-white" size={20} />
-              </button>
+              <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800 transition-colors"><X className="text-slate-500 hover:text-white" size={20} /></button>
             </div>
 
-            {/* Tabs */}
             <div className="flex gap-4 p-4 border-b border-slate-800">
-              <button 
-                onClick={() => setActiveTab('all')} 
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                  activeTab === 'all' 
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' 
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <Package size={16}/> All ({inventoryWithDetails.length})
-              </button>
-              <button 
-                onClick={() => setActiveTab('cosmetic')} 
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                  activeTab === 'cosmetic' 
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' 
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <Palette size={16}/> Appearance ({cosmeticItems.length})
-              </button>
-              <button 
-                onClick={() => setActiveTab('consumable')} 
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                  activeTab === 'consumable' 
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50' 
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <Beaker size={16}/> Alchemy ({consumableItems.length})
-              </button>
+               {/* ... Tabs (same) */}
+               <button onClick={() => setActiveTab('all')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'all' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' : 'text-slate-500 hover:text-slate-300'}`}><Package size={16}/> All ({inventoryWithDetails.length})</button>
+               <button onClick={() => setActiveTab('cosmetic')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'cosmetic' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' : 'text-slate-500 hover:text-slate-300'}`}><Palette size={16}/> Appearance ({cosmeticItems.length})</button>
+               <button onClick={() => setActiveTab('consumable')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'consumable' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50' : 'text-slate-500 hover:text-slate-300'}`}><Beaker size={16}/> Alchemy ({consumableItems.length})</button>
             </div>
 
             {/* Grid */}
@@ -130,75 +129,72 @@ export default function InventoryModal({ isOpen, onClose }) {
                 <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
                   <Package size={48} className="text-slate-700 mb-4" />
                   <p className="text-slate-500 font-bold uppercase tracking-wider">Empty Inventory</p>
-                  <p className="text-xs text-slate-600 mt-2">Visit the Spirit Pavilion to acquire items</p>
                 </div>
               ) : (
                 filteredInventory.map((item) => {
                   const isConsumable = item.shopItem.category === 'consumable'
-                  
+                  const isDurationItem = DURATION_ITEMS.includes(item.shopItem.name)
+                  const timeLeft = timeRemaining[item.item_id]
+                  const isConfirming = confirming === item.item_id
+
                   return (
-                    <div 
-                      key={item.item_id} 
-                      className={`relative p-4 rounded-2xl border flex flex-col gap-3 transition-all ${
-                        item.is_active 
-                          ? 'bg-amber-900/10 border-amber-500/50 shadow-lg shadow-amber-900/10' 
-                          : 'bg-slate-950 border-slate-800'
-                      }`}
-                    >
-                      {/* Active Badge */}
+                    <div key={item.item_id} className={`relative p-4 rounded-2xl border flex flex-col gap-3 transition-all ${item.is_active ? 'bg-amber-900/10 border-amber-500/50 shadow-lg shadow-amber-900/10' : 'bg-slate-950 border-slate-800'}`}>
+                      
+                      {/* Active Badge + Timer */}
                       {item.is_active && (
-                        <div className="absolute top-2 right-2 flex items-center gap-1 bg-amber-500/20 text-amber-300 px-2 py-1 rounded border border-amber-500/30">
-                          <Check size={10}/> 
-                          <span className="text-[10px] font-bold">Active</span>
+                        <div className="absolute -top-1 -right-1 flex items-center gap-2">
+                           {isDurationItem && timeLeft && (
+                             <div className="flex items-center gap-1 bg-slate-900 text-slate-300 px-2 py-1 rounded-lg border border-slate-700 shadow-md">
+                               <Clock size={10} />
+                               <span className="text-[10px] font-mono font-bold">{timeLeft}</span>
+                             </div>
+                           )}
+                           <div className="flex items-center gap-1 bg-emerald-500 text-white px-3 py-1.5 rounded-full shadow-lg shadow-emerald-500/50 border-2 border-slate-900">
+                             <Check size={12} strokeWidth={3}/> 
+                             <span className="text-xs font-bold">ACTIVE</span>
+                           </div>
                         </div>
                       )}
 
-                      <div className="flex justify-between items-start">
-                        <h3 className={`font-bold text-sm ${item.is_active ? 'text-amber-200' : 'text-slate-200'}`}>
-                          {item.shopItem.name}
-                        </h3>
+                      <div className="flex justify-between items-start mt-2">
+                        <h3 className={`font-bold text-sm ${item.is_active ? 'text-amber-200' : 'text-slate-200'}`}>{item.shopItem.name}</h3>
                       </div>
-                      
-                      <p className="text-xs text-slate-500 flex-1 line-clamp-2">
-                        {item.shopItem.description}
-                      </p>
+                      <p className="text-xs text-slate-500 flex-1 line-clamp-2">{item.shopItem.description}</p>
 
-                      {/* Quantity Badge for Consumables */}
                       {isConsumable && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <Sparkles size={12} className="text-emerald-400" />
-                          <span className="text-emerald-300 font-bold">Quantity: {item.quantity}</span>
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg w-fit">
+                          <Sparkles size={14} className="text-emerald-400" />
+                          <span className="text-emerald-300 font-bold text-sm">×{item.quantity}</span>
                         </div>
                       )}
                       
-                      <div className="mt-auto">
+                      <div className="mt-auto pt-3">
                         {isConsumable ? (
-                          // ✅ 3. تعطيل زر USE إذا كانت الحبة active
-                          <button 
-                            onClick={() => handleConsume(item)}
-                            disabled={item.is_active || processing === item.item_id || item.quantity <= 0}
-                            className={`w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-lg active:scale-95 ${
-                              item.is_active
-                                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                                : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                            } disabled:opacity-50 disabled:cursor-not-allowed`}
-                          >
-                            {item.is_active 
-                              ? 'Already Active' 
-                              : processing === item.item_id 
-                                ? 'Using...' 
-                                : `Use (${item.quantity})`
-                            }
-                          </button>
+                          isConfirming ? (
+                            <div className="flex gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                               <button onClick={() => setConfirming(null)} className="flex-1 py-2 rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 text-xs font-bold uppercase">Cancel</button>
+                               <button onClick={() => handleConsume(item)} className="flex-[2] py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase shadow-lg">Confirm</button>
+                            </div>
+                          ) : (
+                            <button 
+                              onClick={() => setConfirming(item.item_id)}
+                              disabled={processing === item.item_id || item.quantity <= 0}
+                              className={`w-full py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${
+                                processing === item.item_id ? 'bg-slate-700 text-slate-400' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white'
+                              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            >
+                              {item.is_active && isDurationItem ? (
+                                <>Extend (+24h)</>
+                              ) : (
+                                <>Consume</>
+                              )}
+                            </button>
+                          )
                         ) : (
                           <button 
                             onClick={() => handleEquip(item)}
                             disabled={item.is_active || processing === item.item_id}
-                            className={`w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
-                              item.is_active 
-                                ? 'bg-slate-800 text-slate-500 cursor-default' 
-                                : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg active:scale-95'
-                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            className={`w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${item.is_active ? 'bg-slate-800 text-slate-500 cursor-default' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg active:scale-95'} disabled:opacity-50 disabled:cursor-not-allowed`}
                           >
                             {item.is_active ? 'Equipped' : 'Equip'}
                           </button>
@@ -209,7 +205,6 @@ export default function InventoryModal({ isOpen, onClose }) {
                 })
               )}
             </div>
-
           </motion.div>
         </motion.div>
       )}

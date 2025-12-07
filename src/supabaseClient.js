@@ -8,7 +8,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    // نعالج الهاش يدوياً، فأوقف القراءة التلقائية لتجنب الـ stale hash
+    detectSessionInUrl: false,
     storage: window.localStorage
   }
 })
