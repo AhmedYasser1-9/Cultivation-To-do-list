@@ -27,8 +27,8 @@ export default function ShopModal({ isOpen, onClose }) {
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/95 backdrop-blur-md p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          <motion.div className="relative w-full max-w-4xl bg-slate-900 border border-amber-500/30 rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden" initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}>
+        <motion.div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/95 backdrop-blur-md p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+          <motion.div className="relative w-full max-w-4xl bg-slate-900 border border-amber-500/30 rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden" initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} onClick={e => e.stopPropagation()}>
             
             {/* Header */}
             <div className="bg-slate-800/80 px-6 py-4 flex justify-between items-center border-b border-white/5">
@@ -75,8 +75,11 @@ export default function ShopModal({ isOpen, onClose }) {
                     <p className="text-xs text-slate-500 flex-1">{item.description}</p>
                     
                     <div className="mt-auto">
-                      {/* ✅ فقط زر الشراء - لا يوجد USE في المتجر */}
-                      {!isOwned ? (
+                      {/* ✅ شرط الشراء: 
+                          - لو consumable: اشتري براحتك (Purchase)
+                          - لو cosmetic: اشتري مرة واحدة (Purchase / Already Owned)
+                      */}
+                      {item.category === 'consumable' ? (
                         <button 
                           onClick={() => handleBuy(item)}
                           disabled={!canAfford || processing === item.id}
@@ -86,9 +89,20 @@ export default function ShopModal({ isOpen, onClose }) {
                           <span className={canAfford ? 'text-emerald-100' : 'text-slate-600'}>({item.price})</span>
                         </button>
                       ) : (
-                        <div className="w-full py-2 rounded-xl bg-slate-800 text-slate-500 text-xs font-bold uppercase tracking-wider text-center">
-                          Already Owned
-                        </div>
+                        !isOwned ? (
+                          <button 
+                            onClick={() => handleBuy(item)}
+                            disabled={!canAfford || processing === item.id}
+                            className={`w-full py-2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider transition-all ${canAfford ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+                          >
+                            {canAfford ? 'Purchase' : 'Unaffordable'} 
+                            <span className={canAfford ? 'text-emerald-100' : 'text-slate-600'}>({item.price})</span>
+                          </button>
+                        ) : (
+                          <div className="w-full py-2 rounded-xl bg-slate-800 text-slate-500 text-xs font-bold uppercase tracking-wider text-center cursor-default border border-slate-700">
+                            Already Owned
+                          </div>
+                        )
                       )}
                     </div>
                   </div>
