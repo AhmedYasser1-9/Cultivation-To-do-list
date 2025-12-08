@@ -394,6 +394,11 @@ export function CultivationProvider({ children }) {
   }
 
   async function equipItem(invItem, shopItemType) {
+    // Handle "default" case - unequip the theme
+    if (invItem?.id === 'default' || invItem?.item_id === 'default') {
+      return await unequipItem(shopItemType)
+    }
+
     const updatedInventory = inventory.map(i => {
       const sItem = shopItems.find(s => s.id === i.item_id)
       if (sItem && sItem.type === shopItemType) {
@@ -403,36 +408,78 @@ export function CultivationProvider({ children }) {
     })
     setInventory(updatedInventory)
 
+    // Find all items of the same type to deactivate in DB BEFORE updating profile
+    const itemsToDeactivate = inventory
+      .filter(i => {
+        const sItem = shopItems.find(s => s.id === i.item_id)
+        return sItem && sItem.type === shopItemType && i.is_active && i.id !== invItem.id
+      })
+      .map(i => i.id)
+    
+    // Deactivate all other items of this type in DB FIRST
+    if (itemsToDeactivate.length > 0) {
+      await supabase.from('inventory').update({ is_active: false }).in('id', itemsToDeactivate)
+    }
+    
+    // Then activate the new one
+    await supabase.from('inventory').update({ is_active: true }).eq('id', invItem.id)
+
     const shopItem = shopItems.find(s => s.id === invItem.item_id)
     if (shopItem) {
       if (shopItemType === 'card_skin') {
-        if (invItem?.id === 'default') {
-          setProfile(prev => ({ ...prev, active_card_skin: null }))
-          await supabase.from('profiles').update({ active_card_skin: null }).eq('id', session.user.id)
-        } else if (shopItem.metadata) {
+        if (shopItem.metadata) {
           setProfile(prev => ({ ...prev, active_card_skin: shopItem.metadata }))
           await supabase.from('profiles').update({ active_card_skin: shopItem.metadata }).eq('id', session.user.id)
         }
       } else if (shopItemType === 'background') {
-        if (invItem?.id === 'default') {
-          setProfile(prev => ({ ...prev, active_bg_image: null }))
-          await supabase.from('profiles').update({ active_bg_image: null }).eq('id', session.user.id)
-        } else if (shopItem.metadata?.url) {
+        if (shopItem.metadata?.url) {
           setProfile(prev => ({ ...prev, active_bg_image: shopItem.metadata.url }))
           await supabase.from('profiles').update({ active_bg_image: shopItem.metadata.url }).eq('id', session.user.id)
         }
       } else if (shopItemType === 'cursor') {
-        if (invItem?.id === 'default') {
-          setProfile(prev => ({ ...prev, active_cursor: null }))
-          await supabase.from('profiles').update({ active_cursor: null }).eq('id', session.user.id)
-        } else if (shopItem.metadata?.style) {
+        if (shopItem.metadata?.style) {
           setProfile(prev => ({ ...prev, active_cursor: shopItem.metadata.style }))
           await supabase.from('profiles').update({ active_cursor: shopItem.metadata.style }).eq('id', session.user.id)
         }
       }
     }
+  }
+
+  async function unequipItem(shopItemType) {
+    // Find all active items of this type BEFORE updating state
+    const itemsToDeactivate = inventory
+      .filter(i => {
+        const sItem = shopItems.find(s => s.id === i.item_id)
+        return sItem && sItem.type === shopItemType && i.is_active
+      })
+      .map(i => i.id)
     
-    await supabase.from('inventory').update({ is_active: true }).eq('id', invItem.id)
+    // Deactivate all items of this type in inventory state
+    const updatedInventory = inventory.map(i => {
+      const sItem = shopItems.find(s => s.id === i.item_id)
+      if (sItem && sItem.type === shopItemType) {
+        return { ...i, is_active: false }
+      }
+      return i
+    })
+    setInventory(updatedInventory)
+
+    // Update profile to remove the theme
+    if (shopItemType === 'card_skin') {
+      setProfile(prev => ({ ...prev, active_card_skin: null }))
+      await supabase.from('profiles').update({ active_card_skin: null }).eq('id', session.user.id)
+    } else if (shopItemType === 'background') {
+      setProfile(prev => ({ ...prev, active_bg_image: null }))
+      await supabase.from('profiles').update({ active_bg_image: null }).eq('id', session.user.id)
+    } else if (shopItemType === 'cursor') {
+      setProfile(prev => ({ ...prev, active_cursor: null }))
+      await supabase.from('profiles').update({ active_cursor: null }).eq('id', session.user.id)
+    }
+
+    // Deactivate all items of this type in database
+    if (itemsToDeactivate.length > 0) {
+      await supabase.from('inventory').update({ is_active: false }).in('id', itemsToDeactivate)
+    }
   }
 
   async function consumeItem(invItem, shopItem, isUndo = false) {
@@ -681,7 +728,7 @@ export function CultivationProvider({ children }) {
       gainQi, gainStones,
       addTask, updateTask, deleteTask, toggleTaskCompletion, reorderTasks, duplicateTask,
       addWeeklyTarget, updateWeeklyTarget, deleteWeeklyTarget, reorderWeeklyTargets, contributeToWeeklyTarget, duplicateWeeklyTarget,
-      buyItem, equipItem, consumeItem, processDailyHarvest,
+      buyItem, equipItem, unequipItem, consumeItem, processDailyHarvest,
       setTagColor, undoDailyReset,
       toast, showToast, closeToast,
       extendLateNight: () => {}, disableLateNight: () => {}, 
