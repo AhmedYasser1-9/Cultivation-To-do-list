@@ -1,4 +1,4 @@
-/* Tailwind CSS directives - warnings about @tailwind are expected and handled by PostCSS */
+/* Tailwind CSS directives */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -13,4 +13,65 @@ input[type=number]::-webkit-outer-spin-button {
 input[type=number] {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+/* ✅ Custom Scrollbar Styling */
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-slate-700 rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-600;
+  }
+
+  /* === THEMES: Backgrounds === */
+  .bg-celestial-grid {
+    background-color: #020617;
+    background-image: 
+      linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .bg-bamboo {
+    background: linear-gradient(to bottom right, #052e16, #064e3b, #022c22);
+  }
+  
+  .bg-library {
+    background: linear-gradient(to bottom right, #271c19, #451a03, #1c1917);
+  }
+
+  .bg-peak {
+    background: linear-gradient(to bottom, #0f172a, #1e293b, #334155);
+  }
+
+  .bg-waterfall {
+    background: linear-gradient(to bottom, #082f49, #0e7490, #083344);
+  }
+
+  .bg-forest {
+    background: radial-gradient(circle at center, #022c22, #000000);
+  }
+
+  .bg-space {
+    background: radial-gradient(circle at top right, #312e81, #020617, #000000);
+  }
+
+  .bg-demon {
+    background: linear-gradient(to bottom, #2a0a0a, #450a0a, #000000);
+  }
+
+  .bg-palace {
+    background: linear-gradient(to bottom right, #422006, #713f12, #171717);
+  }
 }

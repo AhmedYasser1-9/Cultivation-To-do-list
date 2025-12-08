@@ -4,30 +4,44 @@ alwaysApply: true
 
 ## Project Context
 You are building a "Gamified Cultivation Task Manager" web app.
-The theme is strictly Xianxia/Wuxia (Martial Arts Fantasy).
+The theme is strictly Xianxia/Wuxia (Martial Arts Fantasy), but **Strictly Halal/Islamic Compliant**.
+
 - Users are "Cultivators".
-- Tasks are "Missions" or "Training".
+- Tasks are "Missions" or "Mandates".
 - XP is "Cultivation Base" or "Qi".
-- Levels are "Realms" (Mortal -> Foundation -> Golden Core... etc).
+- Levels are "Realms" (Condensing Pulse -> Houtian... etc).
+- Currency is "Spirit Stones".
+
+## Islamic Compliance & Cultural Guidelines (CORE RULE)
+**This is the most important rule. Breaking it is a critical error.**
+1.  **No Divine Terms:** NEVER use terms like "God", "Deity", "Demi-god", "Divinity", "Ascension to Godhood", or "Omnipotent".
+    * *Alternative:* Use "Sage", "Emperor", "Sovereign", "Apex", "Grandmaster", "Immortal" (in the sense of long-lived/Eternal, not divine).
+2.  **No Shirk/Polytheism:** The cultivation system is based on **Energy (Qi)**, Discipline, and Breathing exercises. It is **NOT** based on worshiping idols, statues, or ancestors.
+3.  **No Haram Mechanics:**
+    * **No Gambling:** Mechanics involving luck must not simulate gambling with currency. Random drops are fine (RNG), but betting Spirit Stones is forbidden.
+    * **No Intoxicants:** Use "Spirit Tea" or "Medicinal Elixirs". Do not use "Wine" or "Sake".
+4.  **Respectful Logic:** Avoid naming features that imply knowledge of the Unseen (Ghayb) or controlling absolute Fate.
+    * *Example:* Instead of "Prophecy" or "Foresight", use "Spirit Echo" or "Strategy".
 
 ## Tech Stack (Strictly Enforced)
-- Frontend: React (Vite) + JavaScript.
-- Styling: Tailwind CSS.
-- Icons: Lucide-React.
-- Animation: Framer Motion.
-- Data Persistence: LocalStorage (for now).
+- **Frontend:** React (Vite) + JavaScript.
+- **Styling:** Tailwind CSS.
+- **Icons:** Lucide-React.
+- **Animation:** Framer Motion.
+- **Backend/Persistence:** Supabase (PostgreSQL + Auth).
 
 ## Design System & Styling Rules
 - **Theme:** Dark Mode ONLY. Use deep backgrounds (`bg-slate-900`, `bg-zinc-950`).
 - **Accents:** Use Gold (`text-amber-400`), Jade (`text-emerald-500`), and Crimson (`text-red-500`) for effects.
-- **UI Elements:** Cards should look like jade tablets or ancient scrolls. Use borders with slight opacity.
+- **UI Elements:** Cards should look like jade tablets, ancient scrolls, or spirit formations. Use borders with slight opacity.
 - **Animations:** Everything must feel smooth. Use Framer Motion for:
-  - Task completion (particles/glow).
-  - Level up (modal popup).
-  - Hover effects on cards.
+    - Task completion (particles/glow).
+    - Level up (modal popup).
+    - Hover effects on cards.
 
 ## Coding Behavior
 - Write clean, modern React functional components.
-- Always use Tailwind for styling (no CSS files).
+- Always use Tailwind for styling (no CSS files except index.css).
 - When logical changes happen (like XP gain), explain it in "Cultivation Terms" in the comments.
+- **Naming Convention:** Ensure variable names and UI text adhere to the Islamic Compliance section above.
 - Keep components small and modular in `src/components`.

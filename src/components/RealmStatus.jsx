@@ -39,14 +39,12 @@ export function RealmStatus() {
       return
     }
 
-    const expiryStorageKey = `inventory_expiry_${session.user.id}`
-    
     const updateTimers = () => {
-      const expiryData = JSON.parse(localStorage.getItem(expiryStorageKey) || '{}')
       const newTimeRemaining = {}
       
       activeConsumables.forEach(item => {
-        const expiryTime = expiryData[item.id]
+        // ✅ Use expires_at directly from item
+        const expiryTime = item.expires_at
         if (!expiryTime) return
         
         const now = new Date()

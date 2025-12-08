@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle2, X, AlertCircle, Info } from 'lucide-react'
+import { useEffect } from 'react'
 
 export default function Toast({ isOpen, onClose, message, type = 'success', duration = 3000 }) {
   const icons = {
@@ -14,11 +15,12 @@ export default function Toast({ isOpen, onClose, message, type = 'success', dura
     info: 'border-blue-500/30 bg-blue-500/10',
   }
 
-  if (duration > 0) {
-    setTimeout(() => {
-      if (isOpen) onClose()
-    }, duration)
-  }
+  useEffect(() => {
+    if (isOpen && duration > 0) {
+      const timer = setTimeout(onClose, duration)
+      return () => clearTimeout(timer)
+    }
+  }, [isOpen, duration, onClose])
 
   return (
     <AnimatePresence>
@@ -45,4 +47,3 @@ export default function Toast({ isOpen, onClose, message, type = 'success', dura
     </AnimatePresence>
   )
 }
-

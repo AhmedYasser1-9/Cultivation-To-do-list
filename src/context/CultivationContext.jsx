@@ -39,11 +39,14 @@ const ENDURANCE_MILESTONES = [
   { minutes: 600, xp: 1800 }, { minutes: 750, xp: 2500 }, { minutes: 900, xp: 3000 },
 ]
 
-const getTodayKey = () => new Date().toISOString().slice(0, 10)
+const getTodayKey = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 const getYesterdayKey = () => {
   const d = new Date()
   d.setDate(d.getDate() - 1)
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // Parse access_token / refresh_token from URL hash (magic link or direct token URL)
@@ -106,6 +109,12 @@ export function CultivationProvider({ children }) {
   const [tasks, setTasks] = useState([])
   const [weeklyTargets, setWeeklyTargets] = useState([])
   const [tagColors, setTagColors] = useState({})
+  const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' })
+
+  const showToast = (message, type = 'success') => {
+    setToast({ isOpen: true, message, type })
+  }
+  const closeToast = () => setToast(prev => ({ ...prev, isOpen: false }))
   
   // Shop & Inventory State
   const [shopItems, setShopItems] = useState([])
@@ -114,14 +123,6 @@ export function CultivationProvider({ children }) {
   // 1. Initial Load (Cache + Auth)
   useEffect(() => {
     let cachedProfile = null
-
-    // Safety: إذا حصل أي تأخير غير متوقع، فك التحميل بعد 8 ثواني
-    const safetyTimer = setTimeout(() => {
-      if (loading) {
-        console.warn("⏱️ Safety timer: forcing loading=false")
-        setLoading(false)
-      }
-    }, 8000)
 
     const loadCache = () => {
       try {
@@ -154,15 +155,11 @@ export function CultivationProvider({ children }) {
       if (sess) {
         setSession(sess)
         hadSessionOnce.current = true
-        
-        // ✅ 1. سرعة صاروخية: وقف التحميل فوراً لو فيه Session
         setLoading(false)
 
-        // ✅ 2. تحديث إجباري في الخلفية (تجاهل شرط الوقت في أول مرة)
         if (!hasFetchedInitial.current) {
           hasFetchedInitial.current = true
           console.log("🔄 Force syncing data from DB (Background)...")
-          // نمرر true لـ forceUpdate عشان يتجاهل شرط الوقت
           fetchData(sess.user.id, sess.user.email, true, true) 
         }
       } else {
@@ -171,21 +168,17 @@ export function CultivationProvider({ children }) {
       }
     }
 
-    // ✅ Session Persistence - معالجة hash tokens (magic-link/token URL)
     (async () => {
       const hashSession = extractHashSession()
       if (hashSession) {
-        console.log("🔗 Found hash session, setting and cleaning URL")
         try {
           await supabase.auth.setSession(hashSession)
-          // نظّف الـ hash من الـ URL
           window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
         } catch (err) {
           console.error("❌ Failed to set hash session:", err)
         }
       }
 
-      // بعد أي معالجة للهاش، جيب الـ session الحالي
       supabase.auth.getSession()
         .then(async ({ data: { session }, error }) => {
           if (error) {
@@ -194,21 +187,13 @@ export function CultivationProvider({ children }) {
             return
           }
 
-          // إذا التوكن منتهي، حاول عمل refresh قبل الحكم بالفشل
           const expiresAt = session?.expires_at ? session.expires_at * 1000 : 0
           if (session && expiresAt && expiresAt < Date.now()) {
-            console.log("⏳ Session expired, trying refreshSession()")
             try {
               const { data, error: refreshErr } = await supabase.auth.refreshSession()
-              if (refreshErr) console.error("❌ refreshSession error:", refreshErr)
-              if (data?.session) {
-                return handleSession(data.session, "refreshSession")
-              } else {
-                 console.warn("⚠️ Refresh failed or returned no session. Clearing session.")
-                 return handleSession(null, "refreshFailed")
-              }
+              if (data?.session) return handleSession(data.session, "refreshSession")
+              else return handleSession(null, "refreshFailed")
             } catch (err) {
-              console.error("❌ refreshSession threw:", err)
               return handleSession(null, "refreshError")
             }
           }
@@ -221,50 +206,29 @@ export function CultivationProvider({ children }) {
         })
     })()
 
-    // ✅ التعامل مع auth events (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED, SIGNED_OUT)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("🔐 Auth Event:", event, "User ID:", session?.user?.id)
-      
       if (event === 'SIGNED_OUT') {
-        // تجاهل SIGNED_OUT بدون user عند الإقلاع لتجنب مسح الكاش بالخطأ
-        if (!session?.user?.id && !hadSessionOnce.current) {
-          console.log("⚠️ Ignoring SIGNED_OUT with no user (startup)")
-          return
-        }
-        console.log("👋 User signed out - clearing data")
+        if (!session?.user?.id && !hadSessionOnce.current) return
         setSession(null)
         setProfile(null)
         setTasks([])
         setWeeklyTargets([])
         setInventory([])
         setLoading(false)
-        localStorage.removeItem('cultivation_profile')
-        localStorage.removeItem('cultivation_tasks')
-        localStorage.removeItem('cultivation_targets')
-        localStorage.removeItem('cultivation_last_sync')
-        localStorage.removeItem('cultivation_inventory')
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('inventory_expiry_') || key.startsWith('prevRealmIndex_')) {
-            localStorage.removeItem(key)
-          }
-        })
+        localStorage.clear()
       } else if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         await handleSession(session, event)
       }
     })
 
-    return () => {
-      subscription.unsubscribe()
-      clearTimeout(safetyTimer)
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => { if(profile) localStorage.setItem('cultivation_profile', JSON.stringify(profile)) }, [profile])
   useEffect(() => { if(tasks.length > 0) localStorage.setItem('cultivation_tasks', JSON.stringify(tasks)) }, [tasks])
   useEffect(() => { if(weeklyTargets.length > 0) localStorage.setItem('cultivation_targets', JSON.stringify(weeklyTargets)) }, [weeklyTargets])
-  // ✅ 2. Cache inventory for instant display
   useEffect(() => { 
-    if(inventory.length >= 0) { // ✅ حتى لو فارغ، احفظه
+    if(inventory.length >= 0) {
       localStorage.setItem('cultivation_inventory', JSON.stringify(inventory))
       localStorage.setItem('cultivation_last_sync', Date.now().toString())
     }
@@ -274,15 +238,6 @@ export function CultivationProvider({ children }) {
     try {
       if (!isBackgroundSync && !profile) setLoading(true)
       
-      // ✅ شرط الوقت: فقط لو مش forceUpdate
-      const lastSync = localStorage.getItem('cultivation_last_sync')
-      const now = Date.now()
-      if (!forceUpdate && lastSync && (now - parseInt(lastSync)) < 60000) {
-         console.log("⏳ Data is fresh (less than 1 min), skipping DB fetch")
-         if (!isBackgroundSync) setLoading(false)
-         return
-      }
-
       let { data: userProfile, error: profileError } = await supabase
         .from('profiles').select('*').eq('id', userId).single()
       
@@ -340,33 +295,28 @@ export function CultivationProvider({ children }) {
 
       const { data: shopData } = await supabase.from('shop_items').select('*')
       setShopItems(shopData || [])
-      localStorage.setItem('cultivation_shop', JSON.stringify(shopData || [])) // ✅ Cache Shop Data
+      localStorage.setItem('cultivation_shop', JSON.stringify(shopData || []))
       
       const { data: invData } = await supabase.from('inventory').select('*').eq('user_id', userId)
-      // ✅ Check and deactivate expired items
-      const currentDate = new Date() // renamed from 'now'
-      const expiryStorageKey = `inventory_expiry_${userId}`
-      const expiryData = JSON.parse(localStorage.getItem(expiryStorageKey) || '{}')
       
+      const currentDate = new Date()
+      const itemsToDeactivate = []
       const validInventory = (invData || []).map(item => {
-        const expiryTime = expiryData[item.id]
-        if (expiryTime && new Date(expiryTime) < currentDate) {
-          return { ...item, is_active: false }
+        if (item.is_active && item.expires_at) {
+          const expiryTime = new Date(item.expires_at)
+          if (expiryTime < currentDate) {
+             itemsToDeactivate.push(item.id)
+             return { ...item, is_active: false, expires_at: null }
+          }
         }
         return item
       })
+
       setInventory(validInventory)
       
-      // Update expired items in DB
-      const expiredItems = (invData || []).filter(item => {
-        const expiryTime = expiryData[item.id]
-        return expiryTime && new Date(expiryTime) < currentDate
-      })
-      if (expiredItems.length > 0) {
-        await supabase.from('inventory').update({ is_active: false })
-          .in('id', expiredItems.map(i => i.id))
-        expiredItems.forEach(item => delete expiryData[item.id])
-        localStorage.setItem(expiryStorageKey, JSON.stringify(expiryData))
+      if (itemsToDeactivate.length > 0) {
+        await supabase.from('inventory').update({ is_active: false, expires_at: null })
+          .in('id', itemsToDeactivate)
       }
       
       localStorage.setItem('cultivation_inventory', JSON.stringify(validInventory))
@@ -384,6 +334,7 @@ export function CultivationProvider({ children }) {
   const currentStreak = profile?.current_streak || 0
   const activeCardSkin = profile?.active_card_skin || null
   const activeBgImage = profile?.active_bg_image || null
+  const activeCursor = profile?.active_cursor || null
   const knownTags = profile?.known_tags || []
   const lateNightExpiry = profile?.late_night_expiry || null
   
@@ -398,11 +349,14 @@ export function CultivationProvider({ children }) {
   const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password })
   const signOut = () => supabase.auth.signOut()
 
-  // Shop & Inventory Logic
   async function buyItem(item) {
     if (spiritStones < item.price) return { success: false, msg: "Insufficient Spirit Stones" }
     
     const existingItem = inventory.find(i => i.item_id === item.id)
+
+    if (item.category === 'cosmetic' && existingItem) {
+        return { success: false, msg: "You already own this!" }
+    }
     
     const newStones = spiritStones - item.price
     setProfile(prev => ({ ...prev, spirit_stones: newStones }))
@@ -446,120 +400,79 @@ export function CultivationProvider({ children }) {
       } else if (shopItemType === 'background') {
         setProfile(prev => ({ ...prev, active_bg_image: shopItem.metadata.url }))
         await supabase.from('profiles').update({ active_bg_image: shopItem.metadata.url }).eq('id', session.user.id)
+      } else if (shopItemType === 'cursor') {
+        setProfile(prev => ({ ...prev, active_cursor: shopItem.metadata.style }))
+        await supabase.from('profiles').update({ active_cursor: shopItem.metadata.style }).eq('id', session.user.id)
       }
     }
     
     await supabase.from('inventory').update({ is_active: true }).eq('id', invItem.id)
   }
 
-  // ✅ Consume Item (Updated: Multiple Active + Extension + Undo Support)
   async function consumeItem(invItem, shopItem, isUndo = false) {
     if (!isUndo && invItem.quantity <= 0) return { success: false, msg: "Empty!" }
 
-    const expiryStorageKey = `inventory_expiry_${session.user.id}`
-    const expiryData = JSON.parse(localStorage.getItem(expiryStorageKey) || '{}')
-    const currentDate = new Date()
-
-    // === UNDO / DEACTIVATE ===
     if (isUndo) {
-        // 1. Return quantity
         const newQty = (invItem.quantity || 0) + 1
-        
-        // 2. Remove from active expiry
-        delete expiryData[invItem.id]
-        localStorage.setItem(expiryStorageKey, JSON.stringify(expiryData))
-
-        // 3. Update Local State
         const updatedInventory = inventory.map(i => {
-            if (i.id === invItem.id) {
-                return { ...i, quantity: newQty, is_active: false }
-            }
+            if (i.id === invItem.id) return { ...i, quantity: newQty, is_active: false, expires_at: null }
             return i
         })
         setInventory(updatedInventory)
         localStorage.setItem('cultivation_inventory', JSON.stringify(updatedInventory))
-
-        // 4. Update DB
-        await supabase.from('inventory').update({ quantity: newQty, is_active: false }).eq('id', invItem.id)
-        
+        await supabase.from('inventory').update({ quantity: newQty, is_active: false, expires_at: null }).eq('id', invItem.id)
         return { success: true, msg: "Deactivated & Returned!" }
     }
 
-    // === ACTIVATE / EXTEND ===
-    let newExpiryTime = new Date()
-    const currentExpiry = expiryData[invItem.id]
+    const activeSibling = inventory.find(i => i.item_id === invItem.item_id && i.is_active)
+    let baseExpiry = new Date()
+    if (activeSibling && activeSibling.expires_at) {
+        const activeExpiry = new Date(activeSibling.expires_at)
+        if (activeExpiry > baseExpiry) baseExpiry = activeExpiry
+    }
+    baseExpiry.setHours(baseExpiry.getHours() + 24)
+    const newExpiryISO = baseExpiry.toISOString()
+
+    const currentQty = invItem.quantity ?? 0
+    const newQty = currentQty - 1
+    const itemsToDeactivate = [] 
+    if (activeSibling && activeSibling.id !== invItem.id) itemsToDeactivate.push(activeSibling.id)
+
+    if (newQty < 0) return { success: false, msg: "Not enough items!" }
     
-    // ✅ Extension Logic: If already active, add 24h to existing time
-    if (invItem.is_active && currentExpiry && new Date(currentExpiry) > currentDate) {
-        newExpiryTime = new Date(currentExpiry)
-        newExpiryTime.setHours(newExpiryTime.getHours() + 24)
-    } else {
-        // New Activation
-        newExpiryTime.setHours(newExpiryTime.getHours() + 24)
-    }
+    const updatedInventory = inventory.map(i => {
+            if (i.id === invItem.id) return { ...i, quantity: newQty, is_active: true, expires_at: newExpiryISO }
+            if (itemsToDeactivate.includes(i.id)) return { ...i, is_active: false, expires_at: null }
+            return i
+    })
+    
+    await supabase.from('inventory').update({ quantity: newQty, is_active: true, expires_at: newExpiryISO }).eq('id', invItem.id)
+    if (itemsToDeactivate.length > 0) await supabase.from('inventory').update({ is_active: false, expires_at: null }).in('id', itemsToDeactivate)
 
-    // 1. Save Expiry
-    expiryData[invItem.id] = newExpiryTime.toISOString()
-    localStorage.setItem(expiryStorageKey, JSON.stringify(expiryData))
-
-    // 2. Update Quantity
-    const newQty = invItem.quantity - 1
-    let updatedInventory = []
-
-    if (newQty >= 0) { // Allow 0 to remain if active
-        // ✅ Deactivate other active consumables (fix for multiple concurrent actives)
-        const itemsToDeactivate = inventory.filter(i => 
-             i.is_active && 
-             i.id !== invItem.id && 
-             shopItems.find(s => s.id === i.item_id)?.category === 'consumable'
-        )
-
-        // Clean up expiry for deactivated items
-        itemsToDeactivate.forEach(i => delete expiryData[i.id])
-        localStorage.setItem(expiryStorageKey, JSON.stringify(expiryData))
-
-        // Update local state
-        updatedInventory = inventory.map(i => {
-             if (i.id === invItem.id) return { ...i, quantity: newQty, is_active: true }
-             if (itemsToDeactivate.find(d => d.id === i.id)) return { ...i, is_active: false }
-             return i
-        })
-        
-        // Update DB
-        await supabase.from('inventory').update({ quantity: newQty, is_active: true }).eq('id', invItem.id)
-        if (itemsToDeactivate.length > 0) {
-            await supabase.from('inventory').update({ is_active: false }).in('id', itemsToDeactivate.map(i => i.id))
-        }
-    }
-
-    // لو الكمية بقت أقل من 0 (وده مش المفروض يحصل بالواجهة، بس زيادة أمان)
-    if (newQty < 0) {
-         return { success: false, msg: "Not enough items!" }
-    }
-
-    // 3. Update State
     setInventory(updatedInventory)
     localStorage.setItem('cultivation_inventory', JSON.stringify(updatedInventory))
 
-    // 4. Apply Instant Effects (Only on first activation or every time? Usually once per consume)
-    // For streaks, usually instant.
+    // Apply Instant Effects
     if (shopItem.name === 'Memory Pill') {
+        // Increment streak logic (as requested by user to be left as is/fixed)
         const newStreak = (profile.current_streak || 0) + 1
         setProfile(prev => ({ ...prev, current_streak: newStreak }))
         await supabase.from('profiles').update({ current_streak: newStreak }).eq('id', session.user.id)
-    } 
+    } else if (shopItem.name === 'Tribulation Thunder Bead') {
+        // Level Up
+        // TODO: Implement Realm Up logic if needed, currently just consumable
+    }
 
-    return { success: true, msg: invItem.is_active ? "Effect Extended!" : "Activated!" }
+    return { success: true, msg: activeSibling ? "Effect Extended!" : "Activated!" }
   }
 
+  // ... (rest of the functions: addTask, etc. same as before)
   async function addTask(task) {
     if (!session) return;
     const tempId = crypto.randomUUID()
     setTasks(prev => [{ ...task, id: tempId, isCompleted: false }, ...prev]) 
-
     const dbPayload = mapTaskToDB(task, session.user.id)
     const { data } = await supabase.from('tasks').insert(dbPayload).select().single()
-    
     if (data) {
       setTasks(prev => prev.map(t => t.id === tempId ? mapTaskFromDB(data) : t))
       if (task.tags?.length > 0) {
@@ -595,10 +508,11 @@ export function CultivationProvider({ children }) {
     if (!task) return
     const newVal = !task.isCompleted
     updateTask(id, { isCompleted: newVal })
-    if (newVal && !task.isTrivial) {
+    if (!task.isTrivial) {
        const key = String(task.difficulty).toLowerCase()
        const xpGain = DIFFICULTY_TIERS[key]?.xp || 10
-       gainQi(xpGain)
+       if (newVal) gainQi(xpGain)
+       else gainQi(-xpGain)
     }
   }
 
@@ -614,12 +528,10 @@ export function CultivationProvider({ children }) {
     addTask({ ...original, title: `${original.title} (Copy)`, isCompleted: false })
   }
 
-  // Weekly Targets
   async function addWeeklyTarget(targetData) {
     if (!session) return
     const optimisticTarget = { ...targetData, id: crypto.randomUUID(), progress: 0 }
     setWeeklyTargets(prev => [optimisticTarget, ...prev])
-
     const dbPayload = {
       user_id: session.user.id,
       title: targetData.title,
@@ -644,11 +556,7 @@ export function CultivationProvider({ children }) {
 
   async function reorderWeeklyTargets(newOrderedTargets) {
     setWeeklyTargets(newOrderedTargets)
-    const updates = newOrderedTargets.map((t, index) => ({
-      id: t.id,
-      order_index: index,
-      user_id: session.user.id
-    }))
+    const updates = newOrderedTargets.map((t, index) => ({ id: t.id, order_index: index, user_id: session.user.id }))
     await supabase.from('weekly_targets').upsert(updates, { onConflict: 'id' })
   }
 
@@ -668,7 +576,6 @@ export function CultivationProvider({ children }) {
     addWeeklyTarget({ title: `${original.title} (Copy)`, difficulty: original.difficulty, tags: original.tags })
   }
 
-  // Profile
   async function gainQi(amount) {
     if (!profile || amount === 0) return
     const newQi = Math.max(0, profile.qi + amount)
@@ -726,20 +633,19 @@ export function CultivationProvider({ children }) {
     await supabase.from('profiles').update({ today_total_minutes: prev.today_total_minutes, endurance_milestones: prev.endurance_milestones, last_login_date: prev.last_login_date, previous_day_state: null }).eq('id', session.user.id)
   }
 
-  const auth = { signUp: (e,p,u) => supabase.auth.signUp({email:e, password:p, options:{data:{full_name:u}}}), signIn: (e,p) => supabase.auth.signInWithPassword({email:e, password:p}), signOut: () => supabase.auth.signOut() }
-
   return (
     <CultivationContext.Provider value={{
       session, loading, ...auth,
       profile, qi, spiritStones, currentStreak, tasks, weeklyTargets, shopItems, inventory,
       currentRealm, nextRealm, realmIndex, realms: REALMS,
-      tagColors, activeCardSkin, activeBgImage, knownTags, lateNightExpiry,
+      tagColors, activeCardSkin, activeBgImage, activeCursor, knownTags, lateNightExpiry,
       gainQi, gainStones,
       addTask, updateTask, deleteTask, toggleTaskCompletion, reorderTasks, duplicateTask,
       addWeeklyTarget, updateWeeklyTarget, deleteWeeklyTarget, reorderWeeklyTargets, contributeToWeeklyTarget, duplicateWeeklyTarget,
       buyItem, equipItem, consumeItem, processDailyHarvest,
       setTagColor, undoDailyReset,
-      completeTask: () => {}, extendLateNight: () => {}, disableLateNight: () => {}, 
+      toast, showToast, closeToast,
+      extendLateNight: () => {}, disableLateNight: () => {}, 
       hardReset: async () => {
         if (!session?.user?.id) return
         try {
@@ -758,31 +664,15 @@ export function CultivationProvider({ children }) {
               tag_colors: {},
               active_card_skin: null,
               active_bg_image: null,
+              active_cursor: null,
               previous_day_state: null
             }).eq('id', session.user.id)
           ])
           setTasks([])
           setWeeklyTargets([])
           setInventory([])
-          setProfile(prev => prev ? {
-            ...prev,
-            qi: 0,
-            spirit_stones: 0,
-            current_streak: 0,
-            today_total_minutes: 0,
-            endurance_milestones: [],
-            known_tags: [],
-            tag_colors: {},
-            active_card_skin: null,
-            active_bg_image: null,
-            previous_day_state: null
-          } : null)
-          localStorage.removeItem('cultivation_profile')
-          localStorage.removeItem('cultivation_tasks')
-          localStorage.removeItem('cultivation_targets')
-          localStorage.removeItem('cultivation_last_sync')
-          localStorage.removeItem('cultivation_shop') // ✅ Clear Shop Cache
-          localStorage.removeItem('cultivation_inventory')
+          setProfile(prev => prev ? { ...prev, qi: 0, spirit_stones: 0, current_streak: 0, today_total_minutes: 0, endurance_milestones: [], known_tags: [], tag_colors: {}, active_card_skin: null, active_bg_image: null, active_cursor: null, previous_day_state: null } : null)
+          localStorage.clear()
           window.location.reload()
         } catch (error) {
           console.error("Error resetting:", error)
