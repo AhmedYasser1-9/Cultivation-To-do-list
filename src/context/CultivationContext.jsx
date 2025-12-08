@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useMemo, useRef } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 
 // --- CONSTANTS ---
@@ -38,6 +38,40 @@ const ENDURANCE_MILESTONES = [
   { minutes: 180, xp: 200 }, { minutes: 300, xp: 600 }, { minutes: 480, xp: 1200 },
   { minutes: 600, xp: 1800 }, { minutes: 750, xp: 2500 }, { minutes: 900, xp: 3000 },
 ]
+
+// Inner World Stats Configuration
+const ROYAL_SEA_INDEX = 5
+const FOUNDATION_BUILDING_INDEX = 14
+const LIGHT_YEAR_KM = 9460730472580 // 10 light years in km
+
+const REALM_WORLD_CONFIG = {
+  dantian: {
+    base_radius_km: 1,
+    max_radius_km: 1000,
+    next_realm_base: 1000
+  },
+  inner_world: {
+    base_radius_km: 1000,
+    max_radius_km: LIGHT_YEAR_KM,
+    next_realm_base: LIGHT_YEAR_KM,
+    light_year_threshold: LIGHT_YEAR_KM
+  },
+  main_world: {
+    base_radius_km: LIGHT_YEAR_KM,
+    genius_threshold_multiplier: 2.0
+  }
+}
+
+const DEFAULT_LAWS = {
+  space: 0, time: 0, fire: 0, water: 0, earth: 0, wind: 0,
+  lightning: 0, destruction: 0, darkness: 0, light: 0, life: 0, death: 0
+}
+
+const getWorldTitle = (realmIndex) => {
+  if (realmIndex < ROYAL_SEA_INDEX) return "Dantian Stats"
+  if (realmIndex < FOUNDATION_BUILDING_INDEX) return "Inner World Stats"
+  return "Main World and Cells Stats"
+}
 
 const getTodayKey = () => {
   const d = new Date()
@@ -119,6 +153,10 @@ export function CultivationProvider({ children }) {
   // Shop & Inventory State
   const [shopItems, setShopItems] = useState([])
   const [inventory, setInventory] = useState([])
+  
+  // Inner World Stats State
+  const [innerWorldStats, setInnerWorldStats] = useState(null)
+  const [innerWorldLoading, setInnerWorldLoading] = useState(false)
 
   // 1. Initial Load (Cache + Auth)
   useEffect(() => {
@@ -535,9 +573,6 @@ export function CultivationProvider({ children }) {
            if (lostStreak > newStreak) {
               newStreak = lostStreak + 1 // Restore lost streak + today
            }
-           // Clear lost_streak to prevent double dipping? 
-           // Maybe we keep it until next reset, but usually one pill per incident.
-           // Let's assume consuming it clears the 'lost' state mentally.
         }
 
         setProfile(prev => ({ ...prev, current_streak: newStreak }))
@@ -547,6 +582,20 @@ export function CultivationProvider({ children }) {
         const xpGain = 1000
         await gainQi(xpGain)
         return { success: true, msg: "Heavens shaken! +1000 Qi!" }
+    } else if (shopItem.metadata?.effect_type) {
+        // Handle Inner World Stats pills (permanent effects)
+        const effect = shopItem.metadata
+        if (effect.effect_type === 'world_expansion' || 
+            effect.effect_type === 'law_enhancement' || 
+            effect.effect_type === 'production_boost') {
+          await applyWorldPill(effect)
+          const effectMsg = effect.effect_type === 'world_expansion' 
+            ? `World expanded! +${(effect.multiplier_increase * 100).toFixed(1)}% size`
+            : effect.effect_type === 'law_enhancement'
+            ? `${effect.law_name} law enhanced!`
+            : `Production boosted! +${(effect.production_boost * 100).toFixed(1)}%`
+          return { success: true, msg: effectMsg }
+        }
     }
 
     return { success: true, msg: activeSibling ? "Effect Extended!" : "Activated!" }
@@ -719,16 +768,294 @@ export function CultivationProvider({ children }) {
     await supabase.from('profiles').update({ today_total_minutes: prev.today_total_minutes, endurance_milestones: prev.endurance_milestones, last_login_date: prev.last_login_date, previous_day_state: null }).eq('id', session.user.id)
   }
 
+  // Inner World Stats Functions
+  function getDefaultWorldStats(realmIdx) {
+    const config = realmIdx < ROYAL_SEA_INDEX 
+      ? REALM_WORLD_CONFIG.dantian
+      : realmIdx < FOUNDATION_BUILDING_INDEX
+      ? REALM_WORLD_CONFIG.inner_world
+      : REALM_WORLD_CONFIG.main_world
+
+    return {
+      base_radius_km: config.base_radius_km,
+      multiplier: 1.0,
+      planets: 0,
+      stars: 0,
+      galaxies: 0,
+      universes: 0,
+      multiverses: 0,
+      hyperverses: 0,
+      omniverses: 0,
+      outerverses: 0,
+      mortals_count: 0,
+      cultivators_count: 0,
+      cultivators_with_inner_worlds: 0,
+      time_ratio: 1.0,
+      laws_levels: { ...DEFAULT_LAWS },
+      base_production_per_hour: 0,
+      production_multiplier: 1.0,
+      last_production_calculation: new Date().toISOString(),
+      accumulated_spirit_stones: 0,
+      cells_count: realmIdx >= FOUNDATION_BUILDING_INDEX ? 10 : 0,
+      cells_stats: realmIdx >= FOUNDATION_BUILDING_INDEX ? Array(10).fill(null).map(() => ({
+        radius_km: config.base_radius_km * 0.1,
+        laws_levels: { ...DEFAULT_LAWS }
+      })) : [],
+      total_cells_radius: realmIdx >= FOUNDATION_BUILDING_INDEX ? config.base_radius_km : 0,
+      original_inner_world_radius: realmIdx >= FOUNDATION_BUILDING_INDEX ? config.base_radius_km : 0,
+      genius_multiplier: 1.0
+    }
+  }
+
+  const updateInnerWorldStats = useCallback(async (updates) => {
+    if (!session?.user?.id) return
+    try {
+      const { data, error } = await supabase
+        .from('inner_world_stats')
+        .update(updates)
+        .eq('user_id', session.user.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      setInnerWorldStats(data)
+    } catch (error) {
+      console.error("Error updating inner world stats:", error)
+      showToast("Failed to update inner world stats", 'error')
+    }
+  }, [session?.user?.id])
+
+  const initializeCells = useCallback(async (currentStats) => {
+    if (!currentStats || !session?.user?.id) return
+    
+    const originalRadius = parseFloat(currentStats.base_radius_km) * parseFloat(currentStats.multiplier)
+    const cellCount = 10
+    const cellRadius = originalRadius / cellCount
+
+    const cellsStats = Array(cellCount).fill(null).map(() => ({
+      radius_km: cellRadius,
+      laws_levels: { ...DEFAULT_LAWS }
+    }))
+
+    await updateInnerWorldStats({
+      cells_count: cellCount,
+      cells_stats: cellsStats,
+      total_cells_radius: originalRadius,
+      original_inner_world_radius: originalRadius
+    })
+  }, [session?.user?.id, updateInnerWorldStats])
+
+  const checkRealmTransition = useCallback(async (currentStats) => {
+    if (!currentStats || !session?.user?.id) return
+
+    const effectiveRadius = parseFloat(currentStats.base_radius_km) * parseFloat(currentStats.multiplier)
+    
+    // Check if transitioning to Main World
+    if (realmIndex >= FOUNDATION_BUILDING_INDEX && currentStats.cells_count === 0) {
+      // Initialize cells
+      await initializeCells(currentStats)
+    }
+
+    // Check for genius bonus when transitioning
+    if (realmIndex === FOUNDATION_BUILDING_INDEX && currentStats.genius_multiplier === 1.0) {
+      const nextRealmBase = REALM_WORLD_CONFIG.inner_world.next_realm_base
+      if (effectiveRadius >= nextRealmBase) {
+        // Apply genius multiplier
+        const newBase = nextRealmBase * REALM_WORLD_CONFIG.main_world.genius_threshold_multiplier
+        await updateInnerWorldStats({ 
+          base_radius_km: newBase,
+          genius_multiplier: REALM_WORLD_CONFIG.main_world.genius_threshold_multiplier
+        })
+      } else {
+        // Normal transition
+        await updateInnerWorldStats({ 
+          base_radius_km: REALM_WORLD_CONFIG.main_world.base_radius_km
+        })
+      }
+    }
+  }, [realmIndex, session?.user?.id, updateInnerWorldStats, initializeCells])
+
+  const fetchInnerWorldStats = useCallback(async () => {
+    if (!session?.user?.id) return
+    setInnerWorldLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('inner_world_stats')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .single()
+
+      if (error && error.code === 'PGRST116') {
+        // No record exists, create one
+        const defaultStats = getDefaultWorldStats(realmIndex)
+        const { data: newData, error: insertError } = await supabase
+          .from('inner_world_stats')
+          .insert([{ user_id: session.user.id, ...defaultStats }])
+          .select()
+          .single()
+        
+        if (insertError) throw insertError
+        setInnerWorldStats(newData)
+      } else if (error) {
+        throw error
+      } else {
+        setInnerWorldStats(data)
+        // Check for realm transition
+        await checkRealmTransition(data)
+      }
+    } catch (error) {
+      console.error("Error fetching inner world stats:", error)
+      showToast("Failed to load inner world stats", 'error')
+    } finally {
+      setInnerWorldLoading(false)
+    }
+  }, [session?.user?.id, realmIndex, checkRealmTransition])
+
+  function calculateProduction(stats) {
+    if (!stats) return 0
+    
+    const effectiveRadius = parseFloat(stats.base_radius_km || 0) * parseFloat(stats.multiplier || 1.0)
+    const radiusFactor = Math.sqrt(effectiveRadius)
+    const lawsSum = Object.values(stats.laws_levels || {}).reduce((a, b) => a + (b || 0), 0)
+    const creaturesFactor = Math.log10(
+      (parseInt(stats.mortals_count || 0) + parseInt(stats.cultivators_count || 0)) + 1
+    )
+    const stellarFactor = 
+      parseInt(stats.planets || 0) + 
+      parseInt(stats.stars || 0) * 10 + 
+      parseInt(stats.galaxies || 0) * 100 +
+      parseInt(stats.universes || 0) * 1000
+
+    const hourly = (radiusFactor * lawsSum * creaturesFactor * stellarFactor) * parseFloat(stats.production_multiplier || 1.0)
+    return Math.max(0, hourly)
+  }
+
+  async function claimSpiritStones() {
+    if (!innerWorldStats || !session?.user?.id) return
+    
+    const accumulated = parseFloat(innerWorldStats.accumulated_spirit_stones || 0)
+    if (accumulated <= 0) {
+      showToast("No spirit stones to claim", 'info')
+      return
+    }
+
+    await gainStones(Math.floor(accumulated))
+    await updateInnerWorldStats({ 
+      accumulated_spirit_stones: 0,
+      last_production_calculation: new Date().toISOString()
+    })
+    showToast(`Claimed ${Math.floor(accumulated)} Spirit Stones!`, 'success')
+  }
+
+  async function applyWorldPill(effect) {
+    if (!innerWorldStats || !session?.user?.id) return
+
+    const updates = {}
+    
+    if (effect.effect_type === 'world_expansion') {
+      const currentMultiplier = parseFloat(innerWorldStats.multiplier || 1.0)
+      const increase = parseFloat(effect.multiplier_increase || 0)
+      updates.multiplier = currentMultiplier + increase
+    } else if (effect.effect_type === 'law_enhancement') {
+      const laws = { ...innerWorldStats.laws_levels }
+      const lawName = effect.law_name
+      if (lawName && laws[lawName] !== undefined) {
+        laws[lawName] = Math.min(10, (laws[lawName] || 0) + 1)
+        updates.laws_levels = laws
+      }
+    } else if (effect.effect_type === 'production_boost') {
+      const currentMultiplier = parseFloat(innerWorldStats.production_multiplier || 1.0)
+      const boost = parseFloat(effect.production_boost || 0)
+      updates.production_multiplier = currentMultiplier + boost
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await updateInnerWorldStats(updates)
+    }
+  }
+
+  async function updateCellRadius(cellIndex, newRadius) {
+    if (!innerWorldStats || !session?.user?.id) return
+    
+    const cells = [...(innerWorldStats.cells_stats || [])]
+    if (cellIndex < 0 || cellIndex >= cells.length) return
+
+    const oldRadius = parseFloat(cells[cellIndex].radius_km || 0)
+    const diff = newRadius - oldRadius
+    const totalCellsRadius = parseFloat(innerWorldStats.total_cells_radius || 0)
+    const originalRadius = parseFloat(innerWorldStats.original_inner_world_radius || 0)
+
+    // Check if we can increase this cell
+    if (diff > 0 && (totalCellsRadius + diff) > originalRadius) {
+      showToast("Total cells radius cannot exceed original inner world radius", 'error')
+      return
+    }
+
+    cells[cellIndex].radius_km = newRadius
+    const newTotalCellsRadius = cells.reduce((sum, cell) => sum + parseFloat(cell.radius_km || 0), 0)
+
+    await updateInnerWorldStats({
+      cells_stats: cells,
+      total_cells_radius: newTotalCellsRadius
+    })
+  }
+
+  // Auto-calculate production on stats load/update
+  useEffect(() => {
+    if (!innerWorldStats || !session?.user?.id) return
+
+    const calculateAccumulated = () => {
+      const lastCalc = new Date(innerWorldStats.last_production_calculation || new Date())
+      const now = new Date()
+      const hoursElapsed = (now - lastCalc) / (1000 * 60 * 60)
+      
+      if (hoursElapsed > 0) {
+        const effectiveRadius = parseFloat(innerWorldStats.base_radius_km || 0) * parseFloat(innerWorldStats.multiplier || 1.0)
+        const radiusFactor = Math.sqrt(effectiveRadius)
+        const lawsSum = Object.values(innerWorldStats.laws_levels || {}).reduce((a, b) => a + (b || 0), 0)
+        const creaturesFactor = Math.log10(
+          (parseInt(innerWorldStats.mortals_count || 0) + parseInt(innerWorldStats.cultivators_count || 0)) + 1
+        )
+        const stellarFactor = 
+          parseInt(innerWorldStats.planets || 0) + 
+          parseInt(innerWorldStats.stars || 0) * 10 + 
+          parseInt(innerWorldStats.galaxies || 0) * 100 +
+          parseInt(innerWorldStats.universes || 0) * 1000
+
+        const hourlyRate = (radiusFactor * lawsSum * creaturesFactor * stellarFactor) * parseFloat(innerWorldStats.production_multiplier || 1.0)
+        const accumulated = parseFloat(innerWorldStats.accumulated_spirit_stones || 0) + (hourlyRate * hoursElapsed)
+        
+        updateInnerWorldStats({
+          accumulated_spirit_stones: accumulated,
+          last_production_calculation: now.toISOString()
+        })
+      }
+    }
+
+    calculateAccumulated()
+    const interval = setInterval(calculateAccumulated, 60000) // Every minute
+    return () => clearInterval(interval)
+  }, [innerWorldStats, session?.user?.id, updateInnerWorldStats])
+
+  // Fetch inner world stats when session/realm changes
+  useEffect(() => {
+    if (session?.user?.id && profile) {
+      fetchInnerWorldStats()
+    }
+  }, [session?.user?.id, realmIndex, profile, fetchInnerWorldStats])
+
   return (
     <CultivationContext.Provider value={{
       session, loading, ...auth,
       profile, qi, spiritStones, currentStreak, tasks, weeklyTargets, shopItems, inventory,
       currentRealm, nextRealm, realmIndex, realms: REALMS,
       tagColors, activeCardSkin, activeBgImage, activeCursor, knownTags, lateNightExpiry,
+      innerWorldStats, innerWorldLoading, getWorldTitle,
       gainQi, gainStones,
       addTask, updateTask, deleteTask, toggleTaskCompletion, reorderTasks, duplicateTask,
       addWeeklyTarget, updateWeeklyTarget, deleteWeeklyTarget, reorderWeeklyTargets, contributeToWeeklyTarget, duplicateWeeklyTarget,
       buyItem, equipItem, unequipItem, consumeItem, processDailyHarvest,
+      fetchInnerWorldStats, updateInnerWorldStats, calculateProduction, claimSpiritStones, applyWorldPill, updateCellRadius,
       setTagColor, undoDailyReset,
       toast, showToast, closeToast,
       extendLateNight: () => {}, disableLateNight: () => {}, 

@@ -3,6 +3,7 @@ import { Brain, ScrollText, Store, Settings, Moon, Calendar, Lock, User, Flame, 
 import RealmStatus from './components/RealmStatus.jsx'
 import MissionBoard from './components/MissionBoard.jsx'
 import WeeklyPlan from './components/WeeklyPlan.jsx'
+import InnerWorldStats from './components/InnerWorldStats.jsx'
 import BreakthroughModal from './components/BreakthroughModal.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
 import LateNightModal from './components/LateNightModal.jsx'
@@ -17,7 +18,7 @@ const navItems = [
   { id: 'personal', label: 'Tasks', description: 'Manage your daily path', icon: User },
   { id: 'weekly', label: 'Weekly Goals', description: 'Track grand ambitions', icon: Calendar }, 
   { id: 'sect', label: 'Community', description: 'Challenges (Locked)', icon: ScrollText, locked: true }, 
-  { id: 'stats', label: 'Inner World Stats', description: 'Analytics (Locked)', icon: Brain, locked: true }, 
+  { id: 'stats', label: 'Inner World Stats', description: 'Analytics', icon: Brain, locked: false }, 
   { id: 'shop', label: 'Shop', description: 'Merit Exchange', icon: Store, locked: false }, 
 ]
 
@@ -193,6 +194,7 @@ function App() {
           <RealmStatus />
           {currentView === 'personal' && <MissionBoard />}
           {currentView === 'weekly' && <WeeklyPlan />}
+          {currentView === 'stats' && <InnerWorldStats />}
         </div>
       </main>
 
