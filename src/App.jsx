@@ -10,7 +10,7 @@ import ShopModal from './components/ShopModal.jsx'
 import InventoryModal from './components/InventoryModal.jsx'
 import Toast from './components/Toast.jsx'
 import Auth from './components/Auth.jsx'
-import CursorEffect from './components/CursorEffect.jsx' // ✅ Import Cursor Effect
+import CursorEffect from './components/CursorEffect.jsx' 
 import { useCultivation } from './context/CultivationContext.jsx'
 
 const navItems = [
@@ -185,7 +185,10 @@ function App() {
       </div>
 
       {/* ✅ Dynamic Background */}
-      <main className={`ml-0 min-h-screen px-6 py-8 md:ml-72 md:px-12 md:py-12 transition-all duration-500 ${activeBgImage ? activeBgImage : 'bg-celestial-grid'}`}>
+      <main 
+        className={`ml-0 min-h-screen px-6 py-8 md:ml-72 md:px-12 md:py-12 transition-all duration-500 bg-cover bg-center bg-fixed ${(!activeBgImage || typeof activeBgImage !== 'string' || !activeBgImage.includes('url')) ? (activeBgImage || 'bg-celestial-grid') : ''}`}
+        style={(activeBgImage && typeof activeBgImage === 'string' && activeBgImage.includes('url')) ? { backgroundImage: activeBgImage } : {}}
+      >
         <div className="mx-auto flex max-w-5xl flex-col gap-8">
           <RealmStatus />
           {currentView === 'personal' && <MissionBoard />}

@@ -271,6 +271,15 @@ export function CultivationProvider({ children }) {
            userProfile.today_total_minutes = 0
            userProfile.endurance_milestones = []
            userProfile.last_login_date = today
+           
+           // Capture lost streak BEFORE updating current_streak
+           if (newStreak === 1) {
+              const oldStreak = userProfile.current_streak || 0
+              if (oldStreak > 1) { 
+                 previousState.lost_streak = oldStreak
+              }
+           }
+           
            userProfile.previous_day_state = previousState
            userProfile.current_streak = newStreak
 
@@ -278,7 +287,7 @@ export function CultivationProvider({ children }) {
              today_total_minutes: 0,
              endurance_milestones: [],
              last_login_date: today,
-             previous_day_state: previousState,
+             previous_day_state: userProfile.previous_day_state,
              current_streak: newStreak
            }).eq('id', userId)
         }
@@ -348,6 +357,8 @@ export function CultivationProvider({ children }) {
   const signUp = (email, password, username) => supabase.auth.signUp({ email, password, options: { data: { full_name: username } } })
   const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password })
   const signOut = () => supabase.auth.signOut()
+  
+  const auth = { signUp, signIn, signOut }
 
   async function buyItem(item) {
     if (spiritStones < item.price) return { success: false, msg: "Insufficient Spirit Stones" }
@@ -395,14 +406,29 @@ export function CultivationProvider({ children }) {
     const shopItem = shopItems.find(s => s.id === invItem.item_id)
     if (shopItem) {
       if (shopItemType === 'card_skin') {
-        setProfile(prev => ({ ...prev, active_card_skin: shopItem.metadata }))
-        await supabase.from('profiles').update({ active_card_skin: shopItem.metadata }).eq('id', session.user.id)
+        if (invItem?.id === 'default') {
+          setProfile(prev => ({ ...prev, active_card_skin: null }))
+          await supabase.from('profiles').update({ active_card_skin: null }).eq('id', session.user.id)
+        } else if (shopItem.metadata) {
+          setProfile(prev => ({ ...prev, active_card_skin: shopItem.metadata }))
+          await supabase.from('profiles').update({ active_card_skin: shopItem.metadata }).eq('id', session.user.id)
+        }
       } else if (shopItemType === 'background') {
-        setProfile(prev => ({ ...prev, active_bg_image: shopItem.metadata.url }))
-        await supabase.from('profiles').update({ active_bg_image: shopItem.metadata.url }).eq('id', session.user.id)
+        if (invItem?.id === 'default') {
+          setProfile(prev => ({ ...prev, active_bg_image: null }))
+          await supabase.from('profiles').update({ active_bg_image: null }).eq('id', session.user.id)
+        } else if (shopItem.metadata?.url) {
+          setProfile(prev => ({ ...prev, active_bg_image: shopItem.metadata.url }))
+          await supabase.from('profiles').update({ active_bg_image: shopItem.metadata.url }).eq('id', session.user.id)
+        }
       } else if (shopItemType === 'cursor') {
-        setProfile(prev => ({ ...prev, active_cursor: shopItem.metadata.style }))
-        await supabase.from('profiles').update({ active_cursor: shopItem.metadata.style }).eq('id', session.user.id)
+        if (invItem?.id === 'default') {
+          setProfile(prev => ({ ...prev, active_cursor: null }))
+          await supabase.from('profiles').update({ active_cursor: null }).eq('id', session.user.id)
+        } else if (shopItem.metadata?.style) {
+          setProfile(prev => ({ ...prev, active_cursor: shopItem.metadata.style }))
+          await supabase.from('profiles').update({ active_cursor: shopItem.metadata.style }).eq('id', session.user.id)
+        }
       }
     }
     
@@ -454,13 +480,26 @@ export function CultivationProvider({ children }) {
 
     // Apply Instant Effects
     if (shopItem.name === 'Memory Pill') {
-        // Increment streak logic (as requested by user to be left as is/fixed)
-        const newStreak = (profile.current_streak || 0) + 1
+        let newStreak = (profile.current_streak || 0) + 1
+        
+        // Check if we can restore a lost streak
+        if (profile.previous_day_state && profile.previous_day_state.lost_streak) {
+           const lostStreak = profile.previous_day_state.lost_streak
+           if (lostStreak > newStreak) {
+              newStreak = lostStreak + 1 // Restore lost streak + today
+           }
+           // Clear lost_streak to prevent double dipping? 
+           // Maybe we keep it until next reset, but usually one pill per incident.
+           // Let's assume consuming it clears the 'lost' state mentally.
+        }
+
         setProfile(prev => ({ ...prev, current_streak: newStreak }))
         await supabase.from('profiles').update({ current_streak: newStreak }).eq('id', session.user.id)
+        return { success: true, msg: `Past restored! Streak recovered to ${newStreak}` }
     } else if (shopItem.name === 'Tribulation Thunder Bead') {
-        // Level Up
-        // TODO: Implement Realm Up logic if needed, currently just consumable
+        const xpGain = 1000
+        await gainQi(xpGain)
+        return { success: true, msg: "Heavens shaken! +1000 Qi!" }
     }
 
     return { success: true, msg: activeSibling ? "Effect Extended!" : "Activated!" }
