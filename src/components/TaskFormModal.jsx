@@ -159,7 +159,7 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit, initialData =
             <div className="border-b border-amber-500/20 bg-slate-800/50 px-6 py-4 flex items-center gap-2 flex-shrink-0">
               {initialData ? <PenSquare size={20} className="text-amber-400"/> : <PlusCircle size={20} className="text-amber-400"/>}
               <h2 className="text-lg font-bold uppercase tracking-widest text-amber-100">
-                {initialData ? 'Modify Mandate' : 'Issue New Mandate'}
+                {initialData ? 'Edit Task' : 'New Task'}
               </h2>
             </div>
 
@@ -191,8 +191,8 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit, initialData =
               {activeTab === 'basics' && (
                 <div className="space-y-6">
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Objective</label>
-                    <input autoFocus type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Morning Cultivation" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-emerald-50 outline-none focus:border-amber-400 transition-all" />
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Title</label>
+                    <input autoFocus type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Morning Workout" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-emerald-50 outline-none focus:border-amber-400 transition-all" />
                   </div>
 
                   {/* Trivial Toggle */}
@@ -204,7 +204,7 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit, initialData =
                       <Feather size={12} />
                     </div>
                     <div className="flex flex-col">
-                      <span className={`text-xs font-bold ${isTrivial ? 'text-slate-300' : 'text-slate-400'}`}>Mortal Routine (Trivial)</span>
+                      <span className={`text-xs font-bold ${isTrivial ? 'text-slate-300' : 'text-slate-400'}`}>Trivial Task</span>
                       <span className="text-[9px] text-slate-500">0 XP Awarded</span>
                     </div>
                   </div>
@@ -212,7 +212,7 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit, initialData =
                   {/* Difficulty */}
                   {!isTrivial && (
                     <div className="space-y-2">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Difficulty Grade</label>
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Difficulty</label>
                       <div className="flex flex-wrap gap-2">
                         {Object.entries(DIFFICULTY_TIERS).map(([key, data]) => (
                           <button
@@ -256,7 +256,7 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit, initialData =
                 <div className="space-y-6">
                   {/* Notes */}
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Inscriptions (Notes)</label>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Notes</label>
                     <textarea 
                       value={notes} 
                       onChange={(e) => setNotes(e.target.value)} 
@@ -267,7 +267,7 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit, initialData =
 
                   {/* Subtasks */}
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Sub-Techniques (Checklist)</label>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Subtasks</label>
                     <div className="flex gap-2">
                       <input 
                         type="text" 
@@ -344,10 +344,10 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit, initialData =
 
             {/* Footer Buttons */}
             <div className="flex justify-end gap-3 pt-4 pb-6 px-6 border-t border-slate-800 flex-shrink-0 bg-slate-900">
-              <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800">Retreat</button>
+              <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800">Cancel</button>
               <button onClick={handleConfirm} disabled={!title.trim()} className="rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-2 text-xs font-bold uppercase tracking-wider text-slate-950 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 flex items-center gap-2">
                 {initialData ? <Save size={14}/> : <PlusCircle size={14}/>}
-                {initialData ? 'Update Mandate' : 'Confirm'}
+                {initialData ? 'Update Task' : 'Save'}
               </button>
             </div>
 

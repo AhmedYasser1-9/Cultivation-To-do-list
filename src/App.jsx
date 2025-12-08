@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Brain, ScrollText, Store, Settings, Moon, RotateCcw, Calendar, Lock, User, LogOut, Flame, Package } from 'lucide-react'
+import { Brain, ScrollText, Store, Settings, Moon, Calendar, Lock, User, Flame, Package } from 'lucide-react'
 import RealmStatus from './components/RealmStatus.jsx'
 import MissionBoard from './components/MissionBoard.jsx'
 import WeeklyPlan from './components/WeeklyPlan.jsx'
@@ -7,16 +7,18 @@ import BreakthroughModal from './components/BreakthroughModal.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
 import LateNightModal from './components/LateNightModal.jsx'
 import ShopModal from './components/ShopModal.jsx'
-import InventoryModal from './components/InventoryModal.jsx' // ✅ Inventory Modal
+import InventoryModal from './components/InventoryModal.jsx'
+import Toast from './components/Toast.jsx'
 import Auth from './components/Auth.jsx'
+import CursorEffect from './components/CursorEffect.jsx' 
 import { useCultivation } from './context/CultivationContext.jsx'
 
 const navItems = [
-  { id: 'personal', label: 'Personal Cultivation', description: 'Manage your daily path', icon: User },
-  { id: 'weekly', label: 'Weekly Plan', description: 'Track grand ambitions', icon: Calendar }, 
-  { id: 'sect', label: 'Sect Missions', description: 'Community Challenges (Locked)', icon: ScrollText, locked: true }, 
-  { id: 'stats', label: 'Inner World', description: 'Mind Palace (Locked)', icon: Brain, locked: true }, 
-  { id: 'shop', label: 'Spirit Pavilion', description: 'Merit Exchange', icon: Store, locked: false }, 
+  { id: 'personal', label: 'Tasks', description: 'Manage your daily path', icon: User },
+  { id: 'weekly', label: 'Weekly Goals', description: 'Track grand ambitions', icon: Calendar }, 
+  { id: 'sect', label: 'Community', description: 'Challenges (Locked)', icon: ScrollText, locked: true }, 
+  { id: 'stats', label: 'Inner World Stats', description: 'Analytics (Locked)', icon: Brain, locked: true }, 
+  { id: 'shop', label: 'Shop', description: 'Merit Exchange', icon: Store, locked: false }, 
 ]
 
 function App() {
@@ -27,26 +29,24 @@ function App() {
   const { 
     session, loading, signOut,
     currentRealm, realmIndex, profile,
-    currentStreak,
+    currentStreak, activeBgImage, activeCursor, // ✅ Get Theme States
     lateNightExpiry, 
-    extendLateNight = () => {}, disableLateNight = () => {}, undoDailyReset = () => {}, state = {}, hardReset = () => {} 
+    extendLateNight = () => {}, disableLateNight = () => {}, hardReset = () => {},
+    toast, closeToast
   } = context
 
   const [showBreakthrough, setShowBreakthrough] = useState(null)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLateNightOpen, setIsLateNightOpen] = useState(false)
   const [isShopOpen, setIsShopOpen] = useState(false)
-  const [isInventoryOpen, setIsInventoryOpen] = useState(false) // ✅ Inventory State
+  const [isInventoryOpen, setIsInventoryOpen] = useState(false)
   const [currentView, setCurrentView] = useState('personal')
   
-  // ✅ 1. حل مشكلة Breakthrough - استخدام localStorage مع realmIndex
   const prevSessionId = useRef(null)
   const isFirstLoadAfterLogin = useRef(false)
 
-  // ✅ إعادة تعيين الحالة عند تغيير الـ session
   useEffect(() => {
     const currentSessionId = session?.user?.id || null
-    
     if (prevSessionId.current !== currentSessionId) {
       isFirstLoadAfterLogin.current = true
       prevRealmIndex.current = null
@@ -54,41 +54,32 @@ function App() {
       setIsSettingsOpen(false)
       setIsLateNightOpen(false)
       setCurrentView('personal')
-      
       if (prevSessionId.current) {
         localStorage.removeItem(`prevRealmIndex_${prevSessionId.current}`)
       }
-      
       prevSessionId.current = currentSessionId
     }
   }, [session?.user?.id])
 
   const prevRealmIndex = useRef(null)
 
-  // ✅ فحص breakthrough - فقط بعد اكتمال التحميل الأولي
   useEffect(() => {
-    if (loading || !session || !profile || realmIndex === undefined || realmIndex === null) {
-      return
-    }
+    if (loading || !session || !profile || realmIndex === undefined || realmIndex === null) return
     
     const storageKey = `prevRealmIndex_${session.user.id}`
     
-    // ✅ في أول تحميل بعد الدخول، نحفظ الـ realm index الحالي بدون عرض breakthrough
     if (isFirstLoadAfterLogin.current) {
       const timer = setTimeout(() => {
         localStorage.setItem(storageKey, realmIndex.toString())
         prevRealmIndex.current = realmIndex
         isFirstLoadAfterLogin.current = false
       }, 200)
-      
       return () => clearTimeout(timer)
     }
     
-    // ✅ قراءة آخر realm index من localStorage
     const storedRealmIndex = localStorage.getItem(storageKey)
     const prevRealmIndexValue = storedRealmIndex ? parseInt(storedRealmIndex) : null
     
-    // ✅ فقط إذا كان هناك زيادة حقيقية في Realm Index (breakthrough حقيقي)
     if (prevRealmIndexValue !== null && realmIndex > prevRealmIndexValue) {
       setShowBreakthrough(currentRealm)
       localStorage.setItem(storageKey, realmIndex.toString())
@@ -116,16 +107,18 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-emerald-100">
+      {/* ✅ Cursor Effect */}
+      <CursorEffect type={activeCursor} />
+
       {/* Sidebar */}
       <div className="fixed inset-y-0 z-20 hidden w-72 flex-col border-r border-amber-900/30 bg-slate-900/95 px-6 py-10 backdrop-blur md:flex">
         <div className="mb-10 space-y-2">
-          <p className="text-xs uppercase tracking-[0.6em] text-amber-200">Order of Dawn</p>
-          <h1 className="text-2xl font-semibold text-emerald-400">Cultivation Log</h1>
+          <p className="text-xs uppercase tracking-[0.6em] text-amber-200">Cultivation Manager</p>
+          <h1 className="text-2xl font-semibold text-emerald-400">Dashboard</h1>
           <div className="pt-2">
             <div className="flex items-center justify-between gap-3">
               <div className="overflow-hidden flex-1">
                 <p className="text-xs text-slate-500 mb-1">Elder:</p>
-                {/* ✅ 3. تصميم فخم للاسم */}
                 <h2 
                   className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-amber-300 to-emerald-400 truncate" 
                   title={userName}
@@ -133,7 +126,6 @@ function App() {
                   {userName}
                 </h2>
               </div>
-              {/* ✅ Streak Display */}
               <div className="flex flex-col items-center bg-slate-800/50 p-2 rounded-lg border border-slate-700 min-w-[50px]">
                 <Flame size={18} className="text-amber-500 animate-pulse" fill="currentColor"/>
                 <span className="text-xs font-bold text-amber-200">{currentStreak} Day</span>
@@ -174,8 +166,6 @@ function App() {
         </nav>
 
         <div className="mt-auto space-y-3">
-          {/* ✅ 2. حذف زر Sever Connection - تم الحذف */}
-          {/* ✅ إضافة زر Inventory */}
           <button 
             onClick={() => setIsInventoryOpen(true)} 
             className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-amber-900/30 bg-slate-900 text-slate-500 hover:text-white hover:border-amber-500/50 transition-all"
@@ -194,7 +184,11 @@ function App() {
         </div>
       </div>
 
-      <main className="ml-0 min-h-screen bg-celestial-grid px-6 py-8 md:ml-72 md:px-12 md:py-12">
+      {/* ✅ Dynamic Background */}
+      <main 
+        className={`ml-0 min-h-screen px-6 py-8 md:ml-72 md:px-12 md:py-12 transition-all duration-500 bg-cover bg-center bg-fixed ${(!activeBgImage || typeof activeBgImage !== 'string' || !activeBgImage.includes('url')) ? (activeBgImage || 'bg-celestial-grid') : ''}`}
+        style={(activeBgImage && typeof activeBgImage === 'string' && activeBgImage.includes('url')) ? { backgroundImage: activeBgImage } : {}}
+      >
         <div className="mx-auto flex max-w-5xl flex-col gap-8">
           <RealmStatus />
           {currentView === 'personal' && <MissionBoard />}
@@ -207,8 +201,14 @@ function App() {
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onHardReset={hardReset} onExit={signOut} />
       <LateNightModal isOpen={isLateNightOpen} onClose={() => setIsLateNightOpen(false)} onActivate={extendLateNight} onDisable={disableLateNight} currentExpiry={lateNightExpiry} />
       <ShopModal isOpen={isShopOpen} onClose={() => setIsShopOpen(false)} />
-      {/* ✅ 4. Inventory Modal */}
       <InventoryModal isOpen={isInventoryOpen} onClose={() => setIsInventoryOpen(false)} />
+      
+      <Toast 
+        isOpen={toast.isOpen} 
+        onClose={closeToast} 
+        message={toast.message} 
+        type={toast.type} 
+      />
     </div>
   )
 }

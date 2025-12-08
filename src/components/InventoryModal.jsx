@@ -7,7 +7,7 @@ import { useCultivation } from '../context/CultivationContext.jsx'
 const DURATION_ITEMS = ['Spirit Gathering Array', 'Focus Incense', 'Essence Liquid']
 
 export default function InventoryModal({ isOpen, onClose }) {
-  const { inventory, shopItems, equipItem, consumeItem, session } = useCultivation()
+  const { inventory, shopItems, equipItem, consumeItem, session, showToast } = useCultivation()
   const [activeTab, setActiveTab] = useState('all') 
   const [processing, setProcessing] = useState(null)
   const [confirming, setConfirming] = useState(null) // ID of item being confirmed
@@ -17,15 +17,13 @@ export default function InventoryModal({ isOpen, onClose }) {
   useEffect(() => {
     if (!isOpen || !session?.user?.id) return
 
-    const expiryStorageKey = `inventory_expiry_${session.user.id}`
-    
     const updateTimers = () => {
-      const expiryData = JSON.parse(localStorage.getItem(expiryStorageKey) || '{}')
       const newTimeRemaining = {}
       
       inventory.forEach(item => {
         if (item.is_active && DURATION_ITEMS.includes(shopItems.find(s => s.id === item.item_id)?.name)) {
-          const expiryTime = expiryData[item.id]
+          // ✅ Use expires_at directly from item (from DB)
+          const expiryTime = item.expires_at
           if (expiryTime) {
             const now = new Date()
             const expiry = new Date(expiryTime)
@@ -65,7 +63,7 @@ export default function InventoryModal({ isOpen, onClose }) {
           ids: [] 
         }
       }
-      grouped[key].quantity += (invItem.quantity || 1)
+      grouped[key].quantity += (invItem.quantity ?? 0)
       if (invItem.is_active) grouped[key].is_active = true
       grouped[key].ids.push(invItem.id)
     })
@@ -73,9 +71,10 @@ export default function InventoryModal({ isOpen, onClose }) {
   }
 
   const inventoryWithDetails = getInventoryWithDetails()
-  const filteredInventory = activeTab === 'all' 
+  const filteredInventory = (activeTab === 'all' 
     ? inventoryWithDetails
-    : inventoryWithDetails.filter(item => item.shopItem?.category === activeTab)
+    : inventoryWithDetails.filter(item => item.shopItem?.category === activeTab))
+    .filter(item => item.quantity > 0 || item.is_active)
 
   const handleEquip = async (item) => {
     const invItem = { id: item.ids[0], item_id: item.item_id }
@@ -85,10 +84,45 @@ export default function InventoryModal({ isOpen, onClose }) {
   }
 
   const handleConsume = async (item) => {
-    const invItem = { id: item.ids[0], item_id: item.item_id, quantity: item.quantity, is_active: item.is_active }
+    // ✅ Fix: Find the correct DB item to consume/extend
+    // 1. Prioritize active item (for extension)
+    // 2. Or pick any item with quantity > 0
+    // 3. Fallback to first item (shouldn't happen if quantity > 0)
+    
+    // Find active item ID in this group
+    const activeId = item.ids.find(id => {
+       const inv = inventory.find(i => i.id === id)
+       return inv && inv.is_active
+    })
+
+    // Find any item with quantity > 0
+    const availableId = item.ids.find(id => {
+        const inv = inventory.find(i => i.id === id)
+        return inv && inv.quantity > 0
+    })
+
+    // Determine target ID: If active exists, we might be extending IT.
+    // BUT wait, if we extend, we usually consume a NEW pill (quantity > 0) to add to the ACTIVE pill.
+    // So we should pick an item with Quantity > 0 to consume.
+    
+    // Actually, logic is: Consume 1 pill -> Add time to Active Pill (if exists) OR Start New Active Pill.
+    // So we must pass an item that has Quantity > 0.
+    
+    const targetId = availableId || item.ids[0]
+    const realInvItem = inventory.find(i => i.id === targetId)
+
+    if (!realInvItem) {
+      setConfirming(null)
+      return
+    }
+    
     setProcessing(item.item_id)
-    const res = await consumeItem(invItem, item.shopItem)
-    if (!res.success) alert(res.msg)
+    const res = await consumeItem(realInvItem, item.shopItem)
+    if (!res.success) {
+      showToast(res.msg, 'error')
+    } else {
+      showToast(res.msg, 'success')
+    }
     setProcessing(null)
     setConfirming(null)
   }

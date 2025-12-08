@@ -44,10 +44,10 @@ export default function Auth() {
             <Scroll className="text-amber-400" size={32} />
           </div>
           <h1 className="text-2xl font-bold text-emerald-100 uppercase tracking-widest">
-            {isLogin ? 'Enter the Sect' : 'Join the Order'}
+            {isLogin ? 'Welcome Back' : 'Create Account'}
           </h1>
           <p className="text-xs text-slate-500 mt-2">
-            {isLogin ? 'Present your Spirit Token' : 'Begin your Cultivation Journey'}
+            {isLogin ? 'Sign in to continue your journey' : 'Begin your cultivation path today'}
           </p>
         </div>
 
@@ -57,7 +57,7 @@ export default function Auth() {
               <Sparkles className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
               <input 
                 type="text" 
-                placeholder="Daoist Name (Username)" 
+                placeholder="Username" 
                 value={username}
                 onChange={e => setUsername(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl py-4 pl-12 pr-4 text-emerald-100 outline-none focus:border-emerald-500 transition-all"
@@ -70,7 +70,7 @@ export default function Auth() {
             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             <input 
               type="email" 
-              placeholder="Spirit Contact (Email)" 
+              placeholder="Email" 
               value={email}
               onChange={e => setEmail(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl py-4 pl-12 pr-4 text-emerald-100 outline-none focus:border-emerald-500 transition-all"
@@ -82,7 +82,7 @@ export default function Auth() {
             <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             <input 
               type="password" 
-              placeholder="Secret Mantra (Password)" 
+              placeholder="Password" 
               value={password}
               onChange={e => setPassword(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl py-4 pl-12 pr-4 text-emerald-100 outline-none focus:border-emerald-500 transition-all"
@@ -101,7 +101,7 @@ export default function Auth() {
             disabled={loading}
             className="w-full bg-gradient-to-r from-emerald-600 to-teal-700 py-4 rounded-xl text-white font-bold uppercase tracking-wider shadow-lg hover:from-emerald-500 hover:to-teal-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Communing...' : (isLogin ? 'Open Gates' : 'Forge Soul')}
+            {loading ? 'Loading...' : (isLogin ? 'Login' : 'Sign Up')}
           </button>
         </form>
 
@@ -110,7 +110,7 @@ export default function Auth() {
             onClick={() => { setIsLogin(!isLogin); setMsg(null); }}
             className="text-xs text-slate-400 hover:text-amber-400 transition-colors"
           >
-            {isLogin ? "No Spirit Token? Forge one here." : "Already an Elder? Enter here."}
+            {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login"}
           </button>
         </div>
       </motion.div>
