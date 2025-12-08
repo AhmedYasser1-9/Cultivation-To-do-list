@@ -5,7 +5,7 @@ import ConfirmModal from './ConfirmModal.jsx'
 import { useCultivation } from '../context/CultivationContext.jsx'
 
 export default function SettingsModal({ isOpen, onClose, onHardReset, onExit }) {
-  const { inventory, shopItems, equipItem, activeBgImage, activeCursor, activeCardSkin } = useCultivation()
+  const { inventory, shopItems, equipItem, unequipItem, activeBgImage, activeCursor, activeCardSkin } = useCultivation()
   const fileInputRef = useRef(null)
   const [confirmResetOpen, setConfirmResetOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('general') // 'general' | 'appearance'
@@ -155,7 +155,7 @@ export default function SettingsModal({ isOpen, onClose, onHardReset, onExit }) 
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                             <button 
-                                onClick={() => equipItem({ id: 'default', item_id: 'default' }, 'background')} // Hacky way to reset? Actually Context doesn't support unequip easily, but let's assume one must be active. 
+                                onClick={() => unequipItem('background')}
                                 className={`relative aspect-video rounded-lg border overflow-hidden flex items-center justify-center bg-slate-950 transition-all ${!activeBgImage ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
                             >
                                 <span className="text-xs font-bold text-slate-500">Default</span>
@@ -166,16 +166,26 @@ export default function SettingsModal({ isOpen, onClose, onHardReset, onExit }) 
                                 const isActive = activeBgImage === url
                                 if (!url) return null
                                 return (
-                                    <button 
-                                        key={item.id}
-                                        onClick={() => equipItem(item, 'background')}
-                                        className={`relative aspect-video rounded-lg border overflow-hidden bg-cover bg-center transition-all ${isActive ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
-                                        style={{ backgroundImage: url.includes('url') ? url : `url(${url})` }}
-                                    >
-                                        <div className="absolute inset-0 bg-black/40 hover:bg-black/20 transition-colors" />
-                                        <span className="relative z-10 text-xs font-bold text-white shadow-black drop-shadow-md">{item.shopItem.name}</span>
-                                        {isActive && <div className="absolute top-2 right-2 bg-emerald-500 text-slate-950 p-1 rounded-full z-10"><Check size={10} strokeWidth={4}/></div>}
-                                    </button>
+                                    <div key={item.id} className="relative group">
+                                        <button 
+                                            onClick={() => equipItem(item, 'background')}
+                                            className={`relative aspect-video rounded-lg border overflow-hidden bg-cover bg-center transition-all w-full ${isActive ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
+                                            style={{ backgroundImage: url.includes('url') ? url : `url(${url})` }}
+                                        >
+                                            <div className="absolute inset-0 bg-black/40 hover:bg-black/20 transition-colors" />
+                                            <span className="relative z-10 text-xs font-bold text-white shadow-black drop-shadow-md">{item.shopItem.name}</span>
+                                            {isActive && <div className="absolute top-2 right-2 bg-emerald-500 text-slate-950 p-1 rounded-full z-10"><Check size={10} strokeWidth={4}/></div>}
+                                        </button>
+                                        {isActive && (
+                                            <button
+                                                onClick={() => unequipItem('background')}
+                                                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-lg z-20 transition-all opacity-0 group-hover:opacity-100"
+                                                title="Disable"
+                                            >
+                                                <X size={12} strokeWidth={3} />
+                                            </button>
+                                        )}
+                                    </div>
                                 )
                             })}
                         </div>
@@ -190,7 +200,7 @@ export default function SettingsModal({ isOpen, onClose, onHardReset, onExit }) 
                         </div>
                         <div className="grid grid-cols-3 gap-3">
                             <button 
-                                onClick={() => equipItem({ id: 'default', item_id: 'default' }, 'cursor')} 
+                                onClick={() => unequipItem('cursor')} 
                                 className={`relative p-4 rounded-lg border flex flex-col items-center justify-center gap-2 bg-slate-900 transition-all ${!activeCursor ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
                             >
                                 <MousePointer size={20} className="text-slate-400" />
@@ -201,15 +211,25 @@ export default function SettingsModal({ isOpen, onClose, onHardReset, onExit }) 
                                 const style = item.shopItem.metadata?.style || ''
                                 const isActive = activeCursor === style
                                 return (
-                                    <button 
-                                        key={item.id}
-                                        onClick={() => equipItem(item, 'cursor')}
-                                        className={`relative p-4 rounded-lg border flex flex-col items-center justify-center gap-2 bg-slate-900 transition-all ${isActive ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
-                                    >
-                                        <span className="text-2xl">{item.shopItem.metadata?.preview || '🖱️'}</span>
-                                        <span className="text-xs font-bold text-slate-300">{item.shopItem.name}</span>
-                                        {isActive && <div className="absolute top-2 right-2 bg-emerald-500 text-slate-950 p-1 rounded-full"><Check size={8} strokeWidth={4}/></div>}
-                                    </button>
+                                    <div key={item.id} className="relative group">
+                                        <button 
+                                            onClick={() => equipItem(item, 'cursor')}
+                                            className={`relative p-4 rounded-lg border flex flex-col items-center justify-center gap-2 bg-slate-900 transition-all w-full ${isActive ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
+                                        >
+                                            <span className="text-2xl">{item.shopItem.metadata?.preview || '🖱️'}</span>
+                                            <span className="text-xs font-bold text-slate-300">{item.shopItem.name}</span>
+                                            {isActive && <div className="absolute top-2 right-2 bg-emerald-500 text-slate-950 p-1 rounded-full"><Check size={8} strokeWidth={4}/></div>}
+                                        </button>
+                                        {isActive && (
+                                            <button
+                                                onClick={() => unequipItem('cursor')}
+                                                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-lg z-20 transition-all opacity-0 group-hover:opacity-100"
+                                                title="Disable"
+                                            >
+                                                <X size={12} strokeWidth={3} />
+                                            </button>
+                                        )}
+                                    </div>
                                 )
                             })}
                         </div>
@@ -224,7 +244,7 @@ export default function SettingsModal({ isOpen, onClose, onHardReset, onExit }) 
                         </div>
                          <div className="grid grid-cols-2 gap-3">
                             <button 
-                                onClick={() => equipItem({ id: 'default', item_id: 'default' }, 'card_skin')} 
+                                onClick={() => unequipItem('card_skin')} 
                                 className={`relative p-6 rounded-lg border flex items-center justify-center bg-slate-900 transition-all ${!activeCardSkin ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
                             >
                                 <span className="text-xs font-bold text-slate-500">Default Jade</span>
@@ -235,14 +255,24 @@ export default function SettingsModal({ isOpen, onClose, onHardReset, onExit }) 
                                 const id = item.shopItem.metadata?.id
                                 const isActive = activeCardSkin?.id === id
                                 return (
-                                    <button 
-                                        key={item.id}
-                                        onClick={() => equipItem(item, 'card_skin')}
-                                        className={`relative p-6 rounded-lg border flex items-center justify-center bg-slate-900 transition-all ${isActive ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
-                                    >
-                                        <span className="text-xs font-bold text-amber-200">{item.shopItem.name}</span>
-                                        {isActive && <div className="absolute top-2 right-2 bg-emerald-500 text-slate-950 p-1 rounded-full"><Check size={10} strokeWidth={4}/></div>}
-                                    </button>
+                                    <div key={item.id} className="relative group">
+                                        <button 
+                                            onClick={() => equipItem(item, 'card_skin')}
+                                            className={`relative p-6 rounded-lg border flex items-center justify-center bg-slate-900 transition-all w-full ${isActive ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
+                                        >
+                                            <span className="text-xs font-bold text-amber-200">{item.shopItem.name}</span>
+                                            {isActive && <div className="absolute top-2 right-2 bg-emerald-500 text-slate-950 p-1 rounded-full"><Check size={10} strokeWidth={4}/></div>}
+                                        </button>
+                                        {isActive && (
+                                            <button
+                                                onClick={() => unequipItem('card_skin')}
+                                                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-lg z-20 transition-all opacity-0 group-hover:opacity-100"
+                                                title="Disable"
+                                            >
+                                                <X size={12} strokeWidth={3} />
+                                            </button>
+                                        )}
+                                    </div>
                                 )
                             })}
                         </div>
